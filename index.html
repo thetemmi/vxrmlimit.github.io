@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoxRoom — голосовой чат</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #12121a; --panel: #1a1a26; --border: #2a2a3d;
+    --accent: #00ff88; --accent2: #00ccff; --danger: #ff4466; --warn: #ffaa00;
+    --text: #e8e8f0; --muted: #6666aa; --radius: 12px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'JetBrains Mono',monospace; min-height:100vh; overflow-x:hidden; }
+  body::before {
+    content:''; position:fixed; inset:0;
+    background-image: linear-gradient(rgba(0,255,136,0.03) 1px,transparent 1px), linear-gradient(90deg,rgba(0,255,136,0.03) 1px,transparent 1px);
+    background-size:40px 40px; pointer-events:none; z-index:0;
+  }
+  .app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:20px; min-height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:16px 0 24px; border-bottom:1px solid var(--border); margin-bottom:24px; }
+  .logo { display:flex; align-items:center; gap:12px; }
+  .logo-icon { width:36px; height:36px; background:linear-gradient(135deg,var(--accent),var(--accent2)); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; }
+  .logo-text { font-family:'Unbounded',sans-serif; font-size:20px; font-weight:900; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .status-badge { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); background:var(--panel); border:1px solid var(--border); padding:6px 12px; border-radius:20px; }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); }
+  .dot.online { background:var(--accent); box-shadow:0 0 6px var(--accent); }
+  .dot.warn { background:var(--warn); box-shadow:0 0 6px var(--warn); }
+  .screen { display:none; }
+  .screen.active { display:block; }
+  .lobby { display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; padding:40px 20px; }
+  .lobby-title { font-family:'Unbounded',sans-serif; font-size:clamp(28px,5vw,48px); font-weight:900; text-align:center; line-height:1.1; margin-bottom:8px; }
+  .lobby-title span { background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .lobby-sub { color:var(--muted); font-size:13px; text-align:center; margin-bottom:40px; }
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; width:100%; max-width:560px; margin-bottom:24px; }
+  @media(max-width:500px){.cards{grid-template-columns:1fr;}}
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:24px; transition:border-color .2s,transform .2s; }
+  .card:hover { border-color:var(--accent); transform:translateY(-2px); }
+  .card-title { font-family:'Unbounded',sans-serif; font-size:13px; font-weight:700; margin-bottom:16px; color:var(--accent); letter-spacing:.5px; }
+  .input-group { display:flex; flex-direction:column; gap:8px; }
+  .input { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:13px; padding:10px 14px; outline:none; transition:border-color .2s; width:100%; }
+  .input:focus { border-color:var(--accent); }
+  .input::placeholder { color:var(--muted); }
+  .btn { background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text); cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; padding:10px 18px; transition:all .15s; letter-spacing:.5px; text-transform:uppercase; white-space:nowrap; }
+  .btn:hover { background:var(--border); }
+  .btn:active { transform:scale(.97); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-primary { background:var(--accent); border-color:var(--accent); color:#000; }
+  .btn-primary:hover { background:#00e07a; border-color:#00e07a; }
+  .btn-secondary { background:var(--accent2); border-color:var(--accent2); color:#000; }
+  .btn-secondary:hover { background:#00b8e6; border-color:#00b8e6; }
+  .btn-danger { background:var(--danger); border-color:var(--danger); color:#fff; }
+  .btn-danger:hover { background:#e03055; border-color:#e03055; }
+  .btn-full { width:100%; text-align:center; }
+  #roomScreen { display:none; flex-direction:column; gap:16px; }
+  #roomScreen.active { display:flex; }
+  .room-header { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  .room-name { font-family:'Unbounded',sans-serif; font-size:15px; font-weight:700; color:var(--accent); margin-bottom:4px; }
+  .room-id-row { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); }
+  .room-id-val { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; color:var(--accent2); cursor:pointer; transition:border-color .2s; }
+  .room-id-val:hover { border-color:var(--accent2); }
+  .room-layout { display:grid; grid-template-columns:200px 1fr; gap:16px; }
+  @media(max-width:600px){.room-layout{grid-template-columns:1fr;}}
+  .sidebar { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .sidebar-title { padding:14px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); }
+  .channel-item { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:12px; border-bottom:1px solid rgba(255,255,255,.03); }
+  .channel-item.active { background:rgba(0,255,136,.08); color:var(--accent); }
+  .ch-icon { font-size:14px; opacity:.7; }
+  .ch-name { flex:1; }
+  .ch-count { font-size:10px; color:var(--muted); background:var(--surface); border-radius:10px; padding:1px 6px; }
+  .users-panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .users-title { padding:14px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .users-count { background:var(--accent); color:#000; font-size:10px; font-weight:700; border-radius:10px; padding:1px 8px; }
+  .users-list { padding:8px; display:flex; flex-direction:column; gap:4px; min-height:180px; }
+  .user-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; background:var(--surface); border:1px solid transparent; transition:all .2s; }
+  .user-item.speaking { border-color:var(--accent); background:rgba(0,255,136,.05); box-shadow:0 0 12px rgba(0,255,136,.1); }
+  .user-item.muted-user { opacity:.6; }
+  .avatar { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; font-family:'Unbounded',sans-serif; }
+  .user-name { flex:1; font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .user-badges { display:flex; gap:4px; align-items:center; }
+  .you-tag { font-size:9px; color:var(--accent); background:rgba(0,255,136,.1); border:1px solid rgba(0,255,136,.2); border-radius:4px; padding:1px 5px; font-weight:700; letter-spacing:.5px; }
+  .controls-bar { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  .controls-left { display:flex; align-items:center; gap:10px; }
+  .ctrl-btn { width:44px; height:44px; border-radius:10px; border:1px solid var(--border); background:var(--surface); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; transition:all .15s; }
+  .ctrl-btn:hover { border-color:var(--accent); background:rgba(0,255,136,.05); }
+  .ctrl-btn.muted-ctrl { border-color:var(--danger); background:rgba(255,68,102,.1); }
+  .ctrl-btn:active { transform:scale(.93); }
+  .ctrl-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .ctrl-group { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .vol-slider { -webkit-appearance:none; appearance:none; width:90px; height:4px; border-radius:2px; background:var(--border); outline:none; cursor:pointer; }
+  .vol-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; }
+  @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 rgba(0,255,136,.4);} 70%{box-shadow:0 0 0 8px rgba(0,255,136,0);} 100%{box-shadow:0 0 0 0 rgba(0,255,136,0);} }
+  .user-item.speaking .avatar { animation:pulse-ring 1.2s ease-out infinite; }
+  .log-panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+  .log-title { padding:10px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); }
+  .log-entries { padding:8px 16px; max-height:110px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
+  .log-entry { font-size:11px; color:var(--muted); display:flex; gap:8px; }
+  .log-entry .lt { color:rgba(102,102,170,.5); flex-shrink:0; }
+  .log-entry.info .lm { color:var(--accent2); }
+  .log-entry.success .lm { color:var(--accent); }
+  .log-entry.warn .lm { color:var(--warn); }
+  .log-entry.error .lm { color:var(--danger); }
+  .toast { position:fixed; bottom:24px; right:24px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:12px 18px; font-size:12px; z-index:1000; opacity:0; transform:translateY(8px); transition:all .2s; pointer-events:none; max-width:280px; }
+  .toast.show { opacity:1; transform:translateY(0); }
+  .toast.success { border-color:var(--accent); color:var(--accent); }
+  .toast.error { border-color:var(--danger); color:var(--danger); }
+  .toast.info { border-color:var(--accent2); color:var(--accent2); }
+  .toast.warn { border-color:var(--warn); color:var(--warn); }
+  ::-webkit-scrollbar{width:4px;height:4px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+  .hint { font-size:11px; color:var(--muted); text-align:center; margin-top:8px; }
+  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 20px; color:var(--muted); font-size:12px; gap:8px; text-align:center; }
+  .empty-state .esi { font-size:28px; opacity:.4; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🎙</div>
+      <div class="logo-text">VoxRoom</div>
+    </div>
+    <div class="status-badge">
+      <div class="dot" id="connDot"></div>
+      <span id="connStatus">не подключён</span>
+    </div>
+  </header>
+
+  <div id="lobbyScreen" class="screen active">
+    <div class="lobby">
+      <div class="lobby-title">Голосовой чат<br><span>без регистрации</span></div>
+      <div class="lobby-sub">WebRTC P2P · без регистрации · прямо в браузере</div>
+      <div class="cards">
+        <div class="card">
+          <div class="card-title">// создать комнату</div>
+          <div class="input-group">
+            <input class="input" id="createNick" placeholder="Ник" maxlength="20">
+            <button class="btn btn-primary btn-full" id="createBtn" onclick="createRoom()">Создать</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">// войти в комнату</div>
+          <div class="input-group">
+            <input class="input" id="joinNick" placeholder="Ник" maxlength="20">
+            <input class="input" id="joinRoomId" placeholder="ID комнаты" maxlength="12">
+            <button class="btn btn-secondary btn-full" id="joinBtn" onclick="joinRoom()">Войти</button>
+          </div>
+        </div>
+      </div>
+      <div class="hint">Создай комнату → ID скопируется → поделись с другом<br><b>M</b> в комнате — быстрый мут</div>
+    </div>
+  </div>
+
+  <div id="roomScreen" class="screen">
+    <div class="room-header">
+      <div>
+        <div class="room-name" id="roomTitle">Комната</div>
+        <div class="room-id-row">
+          ID: <span class="room-id-val" id="roomIdDisplay" onclick="copyRoomId()">—</span>
+          <span style="font-size:10px;opacity:.4">← нажми чтобы скопировать</span>
+        </div>
+      </div>
+      <button class="btn btn-danger" onclick="leaveRoom()">Выйти</button>
+    </div>
+
+    <div class="room-layout">
+      <div class="sidebar">
+        <div class="sidebar-title">Каналы</div>
+        <div class="channel-item active"><span class="ch-icon">🔊</span><span class="ch-name">Основной</span><span class="ch-count" id="chCount">0</span></div>
+        <div class="channel-item" style="opacity:.4"><span class="ch-icon">🔇</span><span class="ch-name">AFK</span><span class="ch-count">0</span></div>
+      </div>
+      <div class="users-panel">
+        <div class="users-title">Участники <span class="users-count" id="totalCount">0</span></div>
+        <div class="users-list" id="usersList">
+          <div class="empty-state"><div class="esi">👥</div><div>Здесь пока никого нет</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-bar">
+      <div class="controls-left">
+        <div class="ctrl-group">
+          <div class="ctrl-btn" id="muteBtn" onclick="toggleMute()">🎙</div>
+          <div class="ctrl-label">Микрофон</div>
+        </div>
+        <div class="ctrl-group">
+          <div class="ctrl-btn" id="deafBtn" onclick="toggleDeaf()">🔊</div>
+          <div class="ctrl-label">Звук</div>
+        </div>
+        <div class="ctrl-group" style="margin-left:8px">
+          <input type="range" class="vol-slider" id="volSlider" min="0" max="100" value="100" oninput="setVolume(this.value)">
+          <div class="ctrl-label">Громкость</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted)" id="myNickDisplay"></div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-title">Журнал событий</div>
+      <div class="log-entries" id="logEntries"></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════
+//  ICE / BROKER CONFIG
+// ═══════════════════════════════════════
+const ICE = [
+  { urls:'stun:stun.l.google.com:19302' },
+  { urls:'stun:stun1.l.google.com:19302' },
+  { urls:'stun:stun2.l.google.com:19302' },
+  { urls:'stun:stun.cloudflare.com:3478' },
+  { urls:'stun:stun.relay.metered.ca:80' },
+  { urls:'turn:global.relay.metered.ca:80',               username:'openrelayproject', credential:'openrelayproject' },
+  { urls:'turn:global.relay.metered.ca:443',              username:'openrelayproject', credential:'openrelayproject' },
+  { urls:'turn:global.relay.metered.ca:443?transport=tcp',username:'openrelayproject', credential:'openrelayproject' }
+];
+
+const BROKERS = [
+  { host:'0.peerjs.com', port:443, path:'/', secure:true },
+  null  // SDK default fallback
+];
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let myPeer=null, myStream=null, myId=null, myNick='', roomId=null;
+let isMuted=false, isDeaf=false, volume=1.0;
+
+/*
+  peers[peerId] = { dataConn, mediaCall, audioEl, nick, muted }
+*/
+const peers = {};
+
+// ═══════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════
+const $=id=>document.getElementById(id);
+function setConn(txt,mode=''){$('connStatus').textContent=txt;$('connDot').className='dot'+(mode?' '+mode:'');}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+let _tt;
+function toast(msg,type='info'){const e=$('toast');e.textContent=msg;e.className='toast show '+type;clearTimeout(_tt);_tt=setTimeout(()=>e.className='toast',3200);}
+function log(msg,type=''){
+  const el=$('logEntries');
+  const d=new Date();
+  const t=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const e=document.createElement('div');
+  e.className='log-entry '+type;
+  e.innerHTML='<span class="lt">'+t+'</span><span class="lm">'+msg+'</span>';
+  el.appendChild(e); el.scrollTop=el.scrollHeight;
+}
+function setBtn(id,dis){const b=$(id);if(b)b.disabled=dis;}
+
+// ═══════════════════════════════════════
+//  AVATARS
+// ═══════════════════════════════════════
+const AVC=[['#00ff88','#003322'],['#00ccff','#002233'],['#ff6688','#330011'],['#ffaa00','#332200'],['#aa88ff','#220033'],['#44ddaa','#001122']];
+function avatarColor(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))&0xffff;return AVC[h%AVC.length];}
+function initials(n){return n.substring(0,2).toUpperCase();}
+
+// ═══════════════════════════════════════
+//  RENDER USERS
+// ═══════════════════════════════════════
+function renderUsers(){
+  const list=$('usersList');
+  const entries=[];
+  if(myId) entries.push({id:myId,nick:myNick,muted:isMuted,isMe:true});
+  for(const [pid,p] of Object.entries(peers)) if(p.nick) entries.push({id:pid,nick:p.nick,muted:!!p.muted,isMe:false});
+
+  list.querySelectorAll('.user-item').forEach(el=>{if(!entries.find(e=>e.id===el.dataset.pid))el.remove();});
+  if(entries.length) list.querySelector('.empty-state')?.remove();
+
+  for(const u of entries){
+    let item=$(('ui-'+u.id));
+    if(!item){item=document.createElement('div');item.className='user-item';item.id='ui-'+u.id;item.dataset.pid=u.id;list.appendChild(item);}
+    const [bg,fg]=avatarColor(u.nick);
+    item.className='user-item'+(u.muted?' muted-user':'');
+    item.innerHTML='<div class="avatar" style="background:'+bg+';color:'+fg+'">'+initials(u.nick)+'</div>'
+      +'<div class="user-name">'+u.nick+'</div>'
+      +'<div class="user-badges">'+(u.muted?'<span title="Заглушен">🔇</span>':'')+(u.isMe?'<span class="you-tag">ВЫ</span>':'')+'</div>';
+  }
+  if(!entries.length) list.innerHTML='<div class="empty-state"><div class="esi">👥</div><div>Здесь пока никого нет</div></div>';
+  $('chCount').textContent=entries.length;
+  $('totalCount').textContent=entries.length;
+}
+
+// ═══════════════════════════════════════
+//  SPEAKING DETECTION
+// ═══════════════════════════════════════
+const speakT={};
+function watchSpeaking(stream,pid){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const src=ctx.createMediaStreamSource(stream);
+    const an=ctx.createAnalyser();an.fftSize=256;src.connect(an);
+    const buf=new Uint8Array(an.frequencyBinCount);
+    function tick(){
+      if(!$('roomScreen').classList.contains('active')){ctx.close();return;}
+      an.getByteFrequencyData(buf);
+      const avg=buf.reduce((a,b)=>a+b,0)/buf.length;
+      const el=$('ui-'+pid);
+      if(el&&avg>8){el.classList.add('speaking');clearTimeout(speakT[pid]);speakT[pid]=setTimeout(()=>el.classList.remove('speaking'),400);}
+      requestAnimationFrame(tick);
+    }
+    tick();
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════
+//  AUDIO ATTACH  (idempotent)
+// ═══════════════════════════════════════
+function attachAudio(pid,stream){
+  if(!peers[pid]) return;
+  const p=peers[pid];
+  if(p.audioEl&&p.audioEl.srcObject===stream) return;
+  if(!p.audioEl){const el=document.createElement('audio');el.autoplay=true;el.style.display='none';document.body.appendChild(el);p.audioEl=el;}
+  p.audioEl.srcObject=stream;
+  p.audioEl.volume=isDeaf?0:volume;
+  p.audioEl.play().catch(()=>{});
+  watchSpeaking(stream,pid);
+  log('Аудио от '+(p.nick||pid),'success');
+}
+
+// ═══════════════════════════════════════
+//  MESH: connect to a specific peer
+// ═══════════════════════════════════════
+function connectToPeer(pid,nick){
+  if(!pid||pid===myId) return;
+  if(peers[pid]&&peers[pid].dataConn&&peers[pid].dataConn.open) return;
+  log('Коннектимся к '+(nick||pid),'info');
+  if(!peers[pid]) peers[pid]={dataConn:null,mediaCall:null,audioEl:null,nick:nick||null,muted:false};
+  const conn=myPeer.connect(pid,{reliable:true});
+  peers[pid].dataConn=conn;
+  conn.on('open',()=>{
+    setupData(conn);
+    conn.send({type:'hello',nick:myNick,id:myId});
+  });
+  conn.on('error',e=>log('Conn err→'+pid+': '+e.message,'error'));
+}
+
+// ═══════════════════════════════════════
+//  CALL (audio)
+//  Smaller ID always initiates — prevents double-call echo
+// ═══════════════════════════════════════
+const callPending=new Set();
+function scheduleCall(pid){
+  if(callPending.has(pid)) return;
+  callPending.add(pid);
+  // Smaller ID is primary caller (800ms), larger ID is fallback caller (1600ms)
+  // This ensures audio connects even if one side's call gets lost
+  const delay = myId<pid ? 800 : 1600;
+  setTimeout(()=>{
+    callPending.delete(pid);
+    // Only call if no mediaCall yet (primary caller may have already connected)
+    if(!peers[pid]||peers[pid].mediaCall) return;
+    doCall(pid);
+  }, delay);
+}
+function doCall(pid){
+  if(!myPeer||!myStream||!peers[pid]||peers[pid].mediaCall) return;
+  log('Звоним '+(peers[pid].nick||pid),'info');
+  const call=myPeer.call(pid,myStream,{config:{iceServers:ICE}});
+  peers[pid].mediaCall=call;
+  call.on('stream',s=>attachAudio(pid,s));
+  call.on('close',()=>{if(peers[pid])peers[pid].mediaCall=null;});
+  call.on('error',()=>{if(peers[pid])peers[pid].mediaCall=null;});
+}
+
+// ═══════════════════════════════════════
+//  DATA CHANNEL MESSAGES
+// ═══════════════════════════════════════
+function setupData(conn){
+  const pid=conn.peer;
+  conn.on('data',msg=>{
+    if(!msg||!msg.type) return;
+
+    if(msg.type==='hello'){
+      if(!peers[pid]) peers[pid]={dataConn:conn,mediaCall:null,audioEl:null,nick:null,muted:false};
+      const isNew=!peers[pid].nick;
+      peers[pid].nick=msg.nick;
+      peers[pid].muted=false;
+      if(isNew){log(msg.nick+' вошёл','success');toast(msg.nick+' вошёл в комнату','success');}
+      renderUsers();
+
+      // ACK
+      if(conn.open) conn.send({type:'hello_ack',nick:myNick,id:myId});
+
+      // Send newcomer the full list of everyone else → they connect to all
+      const list=Object.entries(peers).filter(([id,p])=>id!==pid&&p.nick).map(([id,p])=>({id,nick:p.nick}));
+      if(list.length&&conn.open) conn.send({type:'peer_list',peers:list});
+
+      // Tell everyone else about newcomer → they connect to newcomer
+      for(const [eid,ep] of Object.entries(peers)){
+        if(eid!==pid&&ep.dataConn&&ep.dataConn.open&&ep.nick)
+          ep.dataConn.send({type:'new_peer',id:pid,nick:msg.nick});
+      }
+
+      scheduleCall(pid);
+    }
+
+    if(msg.type==='hello_ack'){
+      if(!peers[pid]) peers[pid]={dataConn:conn,mediaCall:null,audioEl:null,nick:null,muted:false};
+      if(!peers[pid].nick){
+        peers[pid].nick=msg.nick;
+        peers[pid].muted=false;
+        log(msg.nick+' ответил','info');
+        renderUsers();
+        scheduleCall(pid);
+      }
+    }
+
+    // Newcomer gets this: connect to everyone in the list
+    if(msg.type==='peer_list'){
+      log('Список пиров: '+msg.peers.length,'info');
+      for(const p of msg.peers)
+        if(p.id!==myId&&!(peers[p.id]&&peers[p.id].dataConn&&peers[p.id].dataConn.open))
+          connectToPeer(p.id,p.nick);
+    }
+
+    // Existing peer told us about a newcomer: connect to them
+    if(msg.type==='new_peer'){
+      if(msg.id!==myId&&!(peers[msg.id]&&peers[msg.id].dataConn&&peers[msg.id].dataConn.open)){
+        log('Новый участник: '+msg.nick+', подключаемся','info');
+        connectToPeer(msg.id,msg.nick);
+      }
+    }
+
+    if(msg.type==='mute'){if(peers[pid]){peers[pid].muted=msg.muted;renderUsers();}}
+  });
+  conn.on('close',()=>removePeer(pid));
+  conn.on('error',()=>removePeer(pid));
+}
+
+// ═══════════════════════════════════════
+//  REMOVE PEER
+// ═══════════════════════════════════════
+function removePeer(pid){
+  if(!peers[pid]) return;
+  const nick=peers[pid].nick||pid;
+  try{peers[pid].mediaCall&&peers[pid].mediaCall.close();}catch(e){}
+  try{peers[pid].dataConn&&peers[pid].dataConn.close();}catch(e){}
+  if(peers[pid].audioEl){peers[pid].audioEl.srcObject=null;peers[pid].audioEl.remove();}
+  delete peers[pid];
+  log(nick+' покинул','warn');
+  renderUsers();
+}
+
+// ═══════════════════════════════════════
+//  BROADCAST
+// ═══════════════════════════════════════
+function broadcast(msg){
+  for(const [,p] of Object.entries(peers))
+    if(p.dataConn&&p.dataConn.open) try{p.dataConn.send(msg);}catch(e){}
+}
+
+// ═══════════════════════════════════════
+//  SETUP PEER LISTENERS
+// ═══════════════════════════════════════
+function setupPeer(){
+  // Incoming data connections
+  myPeer.on('connection',conn=>{
+    const pid=conn.peer;
+    if(peers[pid]&&peers[pid].dataConn&&peers[pid].dataConn.open){conn.on('open',()=>conn.close());return;}
+    if(!peers[pid]) peers[pid]={dataConn:null,mediaCall:null,audioEl:null,nick:null,muted:false};
+    peers[pid].dataConn=conn;
+    conn.on('open',()=>setupData(conn));
+  });
+
+  // Incoming audio calls — always answer, close duplicate if already streaming
+  myPeer.on('call',call=>{
+    const pid=call.peer;
+    if(!peers[pid]) peers[pid]={dataConn:null,mediaCall:null,audioEl:null,nick:null,muted:false};
+    // If we already have an active streaming call, close the old one
+    if(peers[pid].mediaCall){
+      try{peers[pid].mediaCall.close();}catch(e){}
+      peers[pid].mediaCall=null;
+    }
+    peers[pid].mediaCall=call;
+    call.answer(myStream);
+    call.on('stream',s=>attachAudio(pid,s));
+    call.on('close',()=>{if(peers[pid])peers[pid].mediaCall=null;});
+    call.on('error',()=>{if(peers[pid])peers[pid].mediaCall=null;});
+  });
+
+  // Reconnect on drop
+  myPeer.on('disconnected',()=>{
+    setConn('переподключение…','warn');
+    let n=0;
+    function retry(){
+      if(!myPeer||myPeer.destroyed) return;
+      if(myPeer.open){setConn('онлайн','online');return;}
+      if(n>=5){toast('Разрыв — обнови страницу','error');setConn('разрыв','warn');return;}
+      n++;log('Реконнект '+n+'/5…','warn');
+      try{myPeer.reconnect();}catch(e){}
+      setTimeout(()=>{if(myPeer&&!myPeer.open)retry();},2000*n);
+    }
+    setTimeout(retry,1000);
+  });
+
+  myPeer.on('error',err=>{
+    log('Peer err ['+err.type+']: '+err.message,'error');
+    if(err.type==='unavailable-id') toast('ID занят, попробуй снова','error');
+    else if(err.type==='peer-unavailable') toast('Комната не найдена','error');
+    else if(err.type==='network'||err.type==='server-error'||err.type==='socket-error') toast('Сетевая ошибка, переподключаемся…','warn');
+  });
+}
+
+// ═══════════════════════════════════════
+//  PEER FACTORY with broker fallback
+// ═══════════════════════════════════════
+function tryBroker(id,cfg){
+  return new Promise((res,rej)=>{
+    let opts={debug:0,config:{iceServers:ICE}};
+    if(cfg) opts=Object.assign({},opts,{host:cfg.host,port:cfg.port,path:cfg.path,secure:cfg.secure});
+    const peer=new Peer(id,opts);
+    const t=setTimeout(()=>{try{peer.destroy();}catch(e){}rej(new Error('Timeout'));},8000);
+    peer.on('open',pid=>{clearTimeout(t);res({peer,pid});});
+    peer.on('error',e=>{clearTimeout(t);try{peer.destroy();}catch(ex){}rej(e);});
+  });
+}
+async function makePeer(id){
+  let lastErr;
+  for(let i=0;i<BROKERS.length;i++){
+    const b=BROKERS[i];const label=b?b.host:'default';
+    log('Брокер '+(i+1)+'/'+BROKERS.length+': '+label+'…','info');
+    try{const r=await tryBroker(id,b);log('Подключён через '+label,'success');return r;}
+    catch(e){log('Брокер '+label+' недоступен','warn');lastErr=e;}
+  }
+  throw lastErr||new Error('Все брокеры недоступны');
+}
+
+// ═══════════════════════════════════════
+//  MIC
+// ═══════════════════════════════════════
+async function getMic(){
+  return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+}
+
+// ═══════════════════════════════════════
+//  CREATE ROOM
+// ═══════════════════════════════════════
+async function createRoom(){
+  const nick=$('createNick').value.trim();
+  if(!nick){toast('Введи ник!','error');return;}
+  setBtn('createBtn',true);setConn('микрофон…');
+  try{myStream=await getMic();}
+  catch(e){toast('Нет доступа к микрофону','error');log('Mic: '+e.message,'error');setBtn('createBtn',false);return;}
+  myNick=nick;roomId=genRoomId();setConn('подключение…');
+  try{
+    const {peer,pid}=await makePeer('voxroom-'+roomId);
+    myPeer=peer;myId=pid;
+    setupPeer();setConn('онлайн','online');
+    log('Комната: '+roomId,'success');
+    try{await navigator.clipboard.writeText(roomId);toast('ID скопирован: '+roomId,'success');}
+    catch(e){toast('ID: '+roomId,'info');}
+    watchSpeaking(myStream,myId);enterUI();
+  }catch(e){setConn('ошибка','warn');toast('Ошибка: '+e.message,'error');log(''+e.message,'error');}
+  setBtn('createBtn',false);
+}
+
+// ═══════════════════════════════════════
+//  JOIN ROOM
+// ═══════════════════════════════════════
+async function joinRoom(){
+  const nick=$('joinNick').value.trim();
+  const rid=$('joinRoomId').value.trim().toUpperCase().replace(/\s/g,'');
+  if(!nick){toast('Введи ник!','error');return;}
+  if(!rid){toast('Введи ID комнаты!','error');return;}
+  setBtn('joinBtn',true);setConn('микрофон…');
+  try{myStream=await getMic();}
+  catch(e){toast('Нет доступа к микрофону','error');log('Mic: '+e.message,'error');setBtn('joinBtn',false);return;}
+  myNick=nick;roomId=rid;setConn('подключение…');
+  const suffix=Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  try{
+    const {peer,pid}=await makePeer('voxroom-'+rid+'-'+suffix);
+    myPeer=peer;myId=pid;
+    setupPeer();setConn('онлайн','online');
+    // Connect to host — host will send peer_list + notify others
+    connectToPeer('voxroom-'+rid, null);
+    watchSpeaking(myStream,myId);enterUI();
+  }catch(e){setConn('ошибка','warn');toast('Ошибка: '+e.message,'error');log(''+e.message,'error');}
+  setBtn('joinBtn',false);
+}
+
+// ═══════════════════════════════════════
+//  ENTER ROOM UI
+// ═══════════════════════════════════════
+function enterUI(){
+  $('roomTitle').textContent='Комната '+roomId;
+  $('roomIdDisplay').textContent=roomId;
+  $('myNickDisplay').textContent='🎙 '+myNick;
+  renderUsers();showScreen('roomScreen');
+}
+
+// ═══════════════════════════════════════
+//  LEAVE
+// ═══════════════════════════════════════
+function cleanup(){
+  broadcast({type:'leave'});
+  [...Object.keys(peers)].forEach(removePeer);
+  if(myStream){myStream.getTracks().forEach(t=>t.stop());myStream=null;}
+  if(myPeer){try{myPeer.destroy();}catch(e){}myPeer=null;}
+  myId=null;roomId=null;isMuted=false;isDeaf=false;
+}
+function leaveRoom(){
+  cleanup();
+  $('muteBtn').textContent='🎙';$('muteBtn').className='ctrl-btn';
+  $('deafBtn').textContent='🔊';$('deafBtn').className='ctrl-btn';
+  $('logEntries').innerHTML='';
+  setConn('не подключён');showScreen('lobbyScreen');
+}
+
+// ═══════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════
+function toggleMute(){
+  isMuted=!isMuted;
+  if(myStream)myStream.getAudioTracks().forEach(t=>t.enabled=!isMuted);
+  const b=$('muteBtn');b.textContent=isMuted?'🔇':'🎙';b.className='ctrl-btn'+(isMuted?' muted-ctrl':'');
+  renderUsers();broadcast({type:'mute',muted:isMuted});
+  log(isMuted?'Микрофон выключен':'Микрофон включён',isMuted?'warn':'success');
+}
+function toggleDeaf(){
+  isDeaf=!isDeaf;
+  for(const[,p]of Object.entries(peers))if(p.audioEl)p.audioEl.volume=isDeaf?0:volume;
+  const b=$('deafBtn');b.textContent=isDeaf?'🔈':'🔊';b.className='ctrl-btn'+(isDeaf?' muted-ctrl':'');
+  if(isDeaf&&!isMuted)toggleMute();
+}
+function setVolume(val){
+  volume=val/100;
+  if(!isDeaf)for(const[,p]of Object.entries(peers))if(p.audioEl)p.audioEl.volume=volume;
+}
+async function copyRoomId(){
+  try{await navigator.clipboard.writeText(roomId);toast('ID скопирован!','success');}
+  catch(e){toast(roomId,'info');}
+}
+
+// ═══════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════
+function genRoomId(){
+  const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:8},()=>c[Math.floor(Math.random()*c.length)]).join('');
+}
+document.addEventListener('keydown',e=>{
+  if($('roomScreen').classList.contains('active')&&e.code==='KeyM'&&!e.target.matches('input'))toggleMute();
+});
+window.addEventListener('load',()=>{
+  const rid=new URLSearchParams(location.search).get('room');
+  if(rid){$('joinRoomId').value=rid.toUpperCase();toast('ID вставлен — введи ник','info');}
+});
+</script>
+</body>
+</html>
