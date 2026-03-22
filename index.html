@@ -479,17 +479,23 @@ function initCtx() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   masterDest = audioCtx.createMediaStreamDestination();
+  // Connect host's own mic once into a persistent gain node
+  if (myStream) {
+    hostMicGain = audioCtx.createGain();
+    hostMicGain.gain.value = 1.0;
+    const src = audioCtx.createMediaStreamSource(myStream);
+    src.connect(hostMicGain);
+  }
 }
 
+// hostMicGain: persistent gain node for host's mic, connected once
+let hostMicGain = null;
+
 function buildMixFor(excludePid) {
-  // Create a fresh destination for this participant's mix
   const dest = audioCtx.createMediaStreamDestination();
   // Host's own mic
-  if (myStream) {
-    const src = audioCtx.createMediaStreamSource(myStream);
-    src.connect(dest);
-  }
-  // All other participants except excludePid
+  if (hostMicGain) hostMicGain.connect(dest);
+  // All participants except excludePid
   for (const [pid, p] of Object.entries(parts)) {
     if (pid === excludePid) continue;
     if (p.gainNode) p.gainNode.connect(dest);
@@ -500,15 +506,14 @@ function buildMixFor(excludePid) {
 function updateMixes() {
   for (const [pid,] of Object.entries(parts)) {
     if (!outCalls[pid]) continue;
-    const mix = buildMixFor(pid);
     try {
       const pc = outCalls[pid].peerConnection;
       if (!pc) continue;
+      const mix = buildMixFor(pid);
+      const track = mix.getAudioTracks()[0];
+      if (!track) continue;
       const sender = pc.getSenders().find(s => s.track && s.track.kind==='audio');
-      if (sender) {
-        const track = mix.getAudioTracks()[0];
-        if (track) sender.replaceTrack(track).catch(()=>{});
-      }
+      if (sender) sender.replaceTrack(track).catch(e => log('replaceTrack: '+e.message,'warn'));
     } catch(e) {}
   }
 }
@@ -516,15 +521,12 @@ function updateMixes() {
 function hostAddStream(pid, stream) {
   if (!parts[pid]) return;
   initCtx();
-  // Clean old nodes
   try { parts[pid].srcNode?.disconnect(); } catch(e) {}
   try { parts[pid].gainNode?.disconnect(); } catch(e) {}
 
   const src  = audioCtx.createMediaStreamSource(stream);
   const gain = audioCtx.createGain(); gain.gain.value = 1.0;
   src.connect(gain);
-  // Connect to master (used for mix building)
-  gain.connect(masterDest);
 
   parts[pid].srcNode  = src;
   parts[pid].gainNode = gain;
@@ -700,16 +702,36 @@ function clientConnect(hostId) {
     const call = peer.call(hostId, myStream, { config:{iceServers:ICE_SERVERS} });
     hostCall = call;
     call.on('stream', stream => {
-      log('Получили аудио-микс', 'ok');
+      log('Получили аудио-микс от хоста', 'ok');
       if (!clientAudio) {
         clientAudio = document.createElement('audio');
         clientAudio.autoplay = true;
+        clientAudio.playsInline = true;
         clientAudio.style.display = 'none';
         document.body.appendChild(clientAudio);
       }
       clientAudio.srcObject = stream;
       clientAudio.volume = isDeaf ? 0 : vol;
-      clientAudio.play().catch(()=>{});
+      clientAudio.play().then(() => {
+        log('Аудио воспроизводится', 'ok');
+        // Remove unlock button if present
+        const ub = document.getElementById('unlockBtn');
+        if (ub) ub.remove();
+      }).catch(err => {
+        log('Autoplay заблокирован — нажми кнопку звука', 'warn');
+        // Show unlock button
+        let ub = document.getElementById('unlockBtn');
+        if (!ub) {
+          ub = document.createElement('button');
+          ub.id = 'unlockBtn';
+          ub.textContent = '🔊 Нажми чтобы включить звук';
+          ub.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#00ff88;color:#000;border:none;border-radius:12px;padding:16px 28px;font-family:JetBrains Mono,monospace;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 0 30px rgba(0,255,136,.4);';
+          ub.onclick = () => {
+            clientAudio.play().then(() => { ub.remove(); log('Аудио разблокировано', 'ok'); }).catch(()=>{});
+          };
+          document.body.appendChild(ub);
+        }
+      });
     });
     call.on('close', () => log('Аудио с хостом закрыто', 'warn'));
     call.on('error', e => log('Аудио ошибка: '+e.message, 'err'));
@@ -913,6 +935,7 @@ function leaveRoom() {
   G('deafBtn').textContent='🔊'; G('deafBtn').className='ctrl-btn';
   G('logBox').innerHTML='';
   G('chatBox').innerHTML='';
+  const ub = document.getElementById('unlockBtn'); if(ub) ub.remove();
   setConn('не подключён');
   showScreen('lobbyScreen');
 }
