@@ -417,22 +417,31 @@ function initAudioCtx(){
   masterDest=audioCtx.createMediaStreamDestination(); // not really used now
 }
 
+// outCalls: pid → MediaConnection (the call where host sends mix to participant)
+const outCalls={};
+
 // Add participant's stream into the host mixer
 function hostAddStream(pid, stream){
   initAudioCtx();
+  // Disconnect old nodes if any
+  try{participants[pid].sourceNode?.disconnect();}catch(e){}
+  try{participants[pid].gainNode?.disconnect();}catch(e){}
+
   const src=audioCtx.createMediaStreamSource(stream);
   const gain=audioCtx.createGain(); gain.gain.value=1.0;
   src.connect(gain);
+  // Connect to master dest so others can hear this participant
+  gain.connect(masterDest);
+
   participants[pid].sourceNode=src;
   participants[pid].gainNode=gain;
   participants[pid].stream=stream;
-  log('Добавили поток '+( participants[pid].nick||pid)+' в микшер','info');
-  // After adding, rebuild mixes for everyone
-  rebuildMixes();
+  log('Поток '+( participants[pid].nick||pid)+' в микшере','info');
   watchSpeaking(stream, pid);
 }
 
 // Build a mixed stream for ONE participant = everyone except them
+// Uses a per-call destination so each participant gets a tailored mix
 function buildMixFor(excludePid){
   const dest=audioCtx.createMediaStreamDestination();
   // Add host's own mic
@@ -448,33 +457,67 @@ function buildMixFor(excludePid){
   return dest.stream;
 }
 
-// Rebuild and replace outgoing stream for every participant
-const outCalls={}; // pid → MediaConnection (host→participant call)
+// Replace audio track in an existing outgoing call with a new stream
+function replaceTrackInCall(call, stream){
+  try{
+    const pc=call.peerConnection;
+    if(!pc) return;
+    const track=stream.getAudioTracks()[0];
+    if(!track) return;
+    const sender=pc.getSenders().find(s=>s.track&&s.track.kind==='audio');
+    if(sender) sender.replaceTrack(track).catch(()=>{});
+  }catch(e){}
+}
+
+// After any stream is added/removed, push updated mixes to all participants
 function rebuildMixes(){
   for(const [pid,] of Object.entries(participants)){
-    const mixedStream=buildMixFor(pid);
-    if(outCalls[pid]){
-      // Replace tracks in existing peer connection
-      const sender=outCalls[pid].peerConnection?.getSenders?.()[0];
-      if(sender){
-        const track=mixedStream.getAudioTracks()[0];
-        if(track) sender.replaceTrack(track).catch(()=>{});
-      }
-    } else {
-      // Call participant with their mix
-      if(!myPeer) return;
-      const call=myPeer.call(pid, mixedStream, {config:{iceServers:ICE}});
-      outCalls[pid]=call;
-      call.on('stream',()=>{}); // host doesn't need to play anything back
-      call.on('close',()=>{delete outCalls[pid];});
-      call.on('error',()=>{delete outCalls[pid];});
-      log('Отправляем микс участнику '+(participants[pid].nick||pid),'info');
-    }
+    if(!outCalls[pid]) continue;
+    const mix=buildMixFor(pid);
+    replaceTrackInCall(outCalls[pid], mix);
   }
 }
 
-// Host: handle incoming data connection from a new participant
-function hostHandleDataConn(conn){
+// Host: handle incoming audio call FROM participant
+// We answer with that participant's personal mix right away
+function hostHandleCall(call){
+  const pid=call.peer;
+
+  // Build mix for this participant (at call time, before their stream arrives)
+  initAudioCtx();
+  const mix=buildMixFor(pid);
+
+  call.answer(mix);
+  outCalls[pid]=call;
+
+  call.on('stream', stream=>{
+    // Got participant's mic stream — add to mixer, then update everyone's mixes
+    if(participants[pid]){
+      hostAddStream(pid, stream);
+    } else {
+      // Data channel might not have fired 'join' yet — retry briefly
+      const tries=[200,500,1000,2000];
+      let i=0;
+      function retry(){
+        if(participants[pid]){hostAddStream(pid,stream);}
+        else if(i<tries.length){setTimeout(retry,tries[i++]);}
+        else{log('Поток от '+pid+' потерян','warn');}
+      }
+      retry();
+    }
+    // After we have their stream, push updated mixes to everyone
+    rebuildMixes();
+  });
+
+  call.on('close',()=>{
+    delete outCalls[pid];
+    rebuildMixes();
+  });
+  call.on('error',()=>{
+    delete outCalls[pid];
+    rebuildMixes();
+  });
+}
   const pid=conn.peer;
   conn.on('data',msg=>{
     if(!msg||!msg.type) return;
@@ -531,22 +574,6 @@ function broadcastHost(msg){
   for(const [,p] of Object.entries(participants)){
     if(p.dataConn&&p.dataConn.open) try{p.dataConn.send(msg);}catch(e){}
   }
-}
-
-// Host: incoming audio call FROM participant
-function hostHandleCall(call){
-  const pid=call.peer;
-  call.answer(new MediaStream()); // answer with empty stream — we'll send mix separately
-  call.on('stream', stream=>{
-    if(participants[pid]) hostAddStream(pid, stream);
-    else {
-      // Participant not registered yet — wait a bit
-      setTimeout(()=>{if(participants[pid]) hostAddStream(pid, stream);}, 500);
-    }
-  });
-  call.on('close',()=>{});
-  call.on('error',()=>{});
-  if(participants[pid]) participants[pid].call=call;
 }
 
 // ════════════════════════════════════════════════════════
