@@ -3,145 +3,151 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VoxRoom — голосовой чат</title>
+<title>VoxRoom</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0a0f; --surface: #12121a; --panel: #1a1a26; --border: #2a2a3d;
-    --accent: #00ff88; --accent2: #00ccff; --danger: #ff4466; --warn: #ffaa00;
-    --text: #e8e8f0; --muted: #6666aa; --radius: 12px;
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--text); font-family:'JetBrains Mono',monospace; min-height:100vh; overflow-x:hidden; }
-  body::before {
-    content:''; position:fixed; inset:0;
-    background-image: linear-gradient(rgba(0,255,136,0.03) 1px,transparent 1px), linear-gradient(90deg,rgba(0,255,136,0.03) 1px,transparent 1px);
-    background-size:40px 40px; pointer-events:none; z-index:0;
-  }
-  .app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:20px; min-height:100vh; display:flex; flex-direction:column; }
-  header { display:flex; align-items:center; justify-content:space-between; padding:16px 0 24px; border-bottom:1px solid var(--border); margin-bottom:24px; }
-  .logo { display:flex; align-items:center; gap:12px; }
-  .logo-icon { width:36px; height:36px; background:linear-gradient(135deg,var(--accent),var(--accent2)); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; }
-  .logo-text { font-family:'Unbounded',sans-serif; font-size:20px; font-weight:900; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-  .status-badge { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); background:var(--panel); border:1px solid var(--border); padding:6px 12px; border-radius:20px; }
-  .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); }
-  .dot.online { background:var(--accent); box-shadow:0 0 6px var(--accent); }
-  .dot.warn { background:var(--warn); box-shadow:0 0 6px var(--warn); }
-  .screen { display:none; }
-  .screen.active { display:block; }
-  .lobby { display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; padding:40px 20px; }
-  .lobby-title { font-family:'Unbounded',sans-serif; font-size:clamp(28px,5vw,48px); font-weight:900; text-align:center; line-height:1.1; margin-bottom:8px; }
-  .lobby-title span { background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-  .lobby-sub { color:var(--muted); font-size:13px; text-align:center; margin-bottom:40px; }
-  .cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; width:100%; max-width:560px; margin-bottom:24px; }
-  @media(max-width:500px){.cards{grid-template-columns:1fr;}}
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:24px; transition:border-color .2s,transform .2s; }
-  .card:hover { border-color:var(--accent); transform:translateY(-2px); }
-  .card-title { font-family:'Unbounded',sans-serif; font-size:13px; font-weight:700; margin-bottom:16px; color:var(--accent); letter-spacing:.5px; }
-  .input-group { display:flex; flex-direction:column; gap:8px; }
-  .input { background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:13px; padding:10px 14px; outline:none; transition:border-color .2s; width:100%; }
-  .input:focus { border-color:var(--accent); }
-  .input::placeholder { color:var(--muted); }
-  .btn { background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text); cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; padding:10px 18px; transition:all .15s; letter-spacing:.5px; text-transform:uppercase; white-space:nowrap; }
-  .btn:hover { background:var(--border); }
-  .btn:active { transform:scale(.97); }
-  .btn:disabled { opacity:.5; cursor:not-allowed; }
-  .btn-primary { background:var(--accent); border-color:var(--accent); color:#000; }
-  .btn-primary:hover { background:#00e07a; border-color:#00e07a; }
-  .btn-secondary { background:var(--accent2); border-color:var(--accent2); color:#000; }
-  .btn-secondary:hover { background:#00b8e6; border-color:#00b8e6; }
-  .btn-danger { background:var(--danger); border-color:var(--danger); color:#fff; }
-  .btn-danger:hover { background:#e03055; border-color:#e03055; }
-  .btn-full { width:100%; text-align:center; }
-  #roomScreen { display:none; flex-direction:column; gap:16px; }
-  #roomScreen.active { display:flex; }
-  .room-header { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
-  .room-name { font-family:'Unbounded',sans-serif; font-size:15px; font-weight:700; color:var(--accent); margin-bottom:4px; }
-  .room-id-row { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); }
-  .room-id-val { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; color:var(--accent2); cursor:pointer; transition:border-color .2s; }
-  .room-id-val:hover { border-color:var(--accent2); }
-  .room-layout { display:grid; grid-template-columns:200px 1fr; gap:16px; }
-  @media(max-width:600px){.room-layout{grid-template-columns:1fr;}}
-  .sidebar { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-  .sidebar-title { padding:14px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); }
-  .channel-item { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:12px; border-bottom:1px solid rgba(255,255,255,.03); }
-  .channel-item.active { background:rgba(0,255,136,.08); color:var(--accent); }
-  .ch-icon { font-size:14px; opacity:.7; }
-  .ch-name { flex:1; }
-  .ch-count { font-size:10px; color:var(--muted); background:var(--surface); border-radius:10px; padding:1px 6px; }
-  .users-panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-  .users-title { padding:14px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
-  .users-count { background:var(--accent); color:#000; font-size:10px; font-weight:700; border-radius:10px; padding:1px 8px; }
-  .users-list { padding:8px; display:flex; flex-direction:column; gap:4px; min-height:180px; }
-  .user-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; background:var(--surface); border:1px solid transparent; transition:all .2s; }
-  .user-item.speaking { border-color:var(--accent); background:rgba(0,255,136,.05); box-shadow:0 0 12px rgba(0,255,136,.1); }
-  .user-item.muted-user { opacity:.6; }
-  .avatar { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; font-family:'Unbounded',sans-serif; }
-  .user-name { flex:1; font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .user-badges { display:flex; gap:4px; align-items:center; }
-  .you-tag { font-size:9px; color:var(--accent); background:rgba(0,255,136,.1); border:1px solid rgba(0,255,136,.2); border-radius:4px; padding:1px 5px; font-weight:700; letter-spacing:.5px; }
-  .controls-bar { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
-  .controls-left { display:flex; align-items:center; gap:10px; }
-  .ctrl-btn { width:44px; height:44px; border-radius:10px; border:1px solid var(--border); background:var(--surface); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; transition:all .15s; }
-  .ctrl-btn:hover { border-color:var(--accent); background:rgba(0,255,136,.05); }
-  .ctrl-btn.muted-ctrl { border-color:var(--danger); background:rgba(255,68,102,.1); }
-  .ctrl-btn:active { transform:scale(.93); }
-  .ctrl-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-  .ctrl-group { display:flex; flex-direction:column; align-items:center; gap:4px; }
-  .vol-slider { -webkit-appearance:none; appearance:none; width:90px; height:4px; border-radius:2px; background:var(--border); outline:none; cursor:pointer; }
-  .vol-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; }
-  @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 rgba(0,255,136,.4);} 70%{box-shadow:0 0 0 8px rgba(0,255,136,0);} 100%{box-shadow:0 0 0 0 rgba(0,255,136,0);} }
-  .user-item.speaking .avatar { animation:pulse-ring 1.2s ease-out infinite; }
-  .log-panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-  .log-title { padding:10px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); }
-  .log-entries { padding:8px 16px; max-height:110px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
-  .log-entry { font-size:11px; color:var(--muted); display:flex; gap:8px; }
-  .log-entry .lt { color:rgba(102,102,170,.5); flex-shrink:0; }
-  .log-entry.info .lm { color:var(--accent2); }
-  .log-entry.success .lm { color:var(--accent); }
-  .log-entry.warn .lm { color:var(--warn); }
-  .log-entry.error .lm { color:var(--danger); }
-  .toast { position:fixed; bottom:24px; right:24px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:12px 18px; font-size:12px; z-index:1000; opacity:0; transform:translateY(8px); transition:all .2s; pointer-events:none; max-width:280px; }
-  .toast.show { opacity:1; transform:translateY(0); }
-  .toast.success { border-color:var(--accent); color:var(--accent); }
-  .toast.error { border-color:var(--danger); color:var(--danger); }
-  .toast.info { border-color:var(--accent2); color:var(--accent2); }
-  .toast.warn { border-color:var(--warn); color:var(--warn); }
-  ::-webkit-scrollbar{width:4px;height:4px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
-  .hint { font-size:11px; color:var(--muted); text-align:center; margin-top:8px; }
-  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 20px; color:var(--muted); font-size:12px; gap:8px; text-align:center; }
-  .empty-state .esi { font-size:28px; opacity:.4; }
+:root {
+  --bg:#0a0a0f; --surf:#12121a; --panel:#1a1a26; --border:#2a2a3d;
+  --acc:#00ff88; --acc2:#00ccff; --red:#ff4466; --warn:#ffaa00;
+  --txt:#e8e8f0; --muted:#6666aa; --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--txt);font-family:'JetBrains Mono',monospace;min-height:100vh;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,136,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+.app{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:20px;min-height:100vh;display:flex;flex-direction:column;}
 
-  /* Avatar image support */
-  .avatar img { width:100%; height:100%; object-fit:cover; border-radius:6px; display:block; }
+/* header */
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 0 24px;border-bottom:1px solid var(--border);margin-bottom:24px;}
+.logo{display:flex;align-items:center;gap:12px;}
+.logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--acc),var(--acc2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.logo-txt{font-family:'Unbounded',sans-serif;font-size:20px;font-weight:900;background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.conn-badge{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--border);padding:6px 12px;border-radius:20px;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);}
+.dot.on{background:var(--acc);box-shadow:0 0 6px var(--acc);}
+.dot.warn{background:var(--warn);box-shadow:0 0 6px var(--warn);}
 
-  /* Lobby avatar url field */
-  .lobby-avatar-row { display:flex; align-items:center; gap:10px; width:100%; max-width:560px; margin-bottom:16px; }
-  .lobby-avatar-preview { width:44px; height:44px; border-radius:10px; background:var(--surface); border:1px solid var(--border); overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+/* screens */
+.screen{display:none;}.screen.active{display:block;}
 
-  /* Chat panel */
-  .chat-panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; overflow:hidden; height:320px; }
-  .chat-title { padding:10px 16px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; border-bottom:1px solid var(--border); flex-shrink:0; }
-  .chat-messages { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px; }
-  .chat-msg { display:flex; gap:8px; align-items:flex-start; }
-  .chat-msg.mine { flex-direction:row-reverse; }
-  .chat-msg-avatar { width:28px; height:28px; border-radius:7px; flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; font-family:"Unbounded",sans-serif; }
-  .chat-msg-avatar img { width:100%; height:100%; object-fit:cover; border-radius:6px; }
-  .chat-msg-body { max-width:70%; }
-  .chat-msg.mine .chat-msg-body { align-items:flex-end; display:flex; flex-direction:column; }
-  .chat-msg-name { font-size:10px; color:var(--muted); margin-bottom:3px; }
-  .chat-msg.mine .chat-msg-name { text-align:right; }
-  .chat-msg-text { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:12px; line-height:1.4; word-break:break-word; }
-  .chat-msg.mine .chat-msg-text { background:rgba(0,255,136,.08); border-color:rgba(0,255,136,.2); color:var(--accent); }
-  .chat-msg-time { font-size:9px; color:var(--muted); margin-top:3px; }
-  .chat-input-row { display:flex; gap:8px; padding:10px; border-top:1px solid var(--border); flex-shrink:0; }
-  .chat-input { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:"JetBrains Mono",monospace; font-size:12px; padding:8px 12px; outline:none; transition:border-color .2s; }
-  .chat-input:focus { border-color:var(--accent); }
-  .chat-send-btn { width:36px; height:36px; border-radius:8px; border:1px solid var(--accent); background:rgba(0,255,136,.1); color:var(--accent); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:16px; transition:all .15s; flex-shrink:0; }
-  .chat-send-btn:hover { background:rgba(0,255,136,.2); }
-  .chat-send-btn:active { transform:scale(.93); }
-  .chat-sys { font-size:11px; color:var(--muted); text-align:center; padding:2px 0; font-style:italic; }
+/* lobby */
+.lobby{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:40px 20px;}
+.lobby-title{font-family:'Unbounded',sans-serif;font-size:clamp(26px,5vw,46px);font-weight:900;text-align:center;line-height:1.1;margin-bottom:8px;}
+.lobby-title span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.lobby-sub{color:var(--muted);font-size:13px;text-align:center;margin-bottom:40px;}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%;max-width:580px;margin-bottom:16px;}
+@media(max-width:520px){.cards{grid-template-columns:1fr;}}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:24px;transition:border-color .2s,transform .2s;}
+.card:hover{border-color:var(--acc);transform:translateY(-2px);}
+.card-title{font-family:'Unbounded',sans-serif;font-size:12px;font-weight:700;margin-bottom:14px;color:var(--acc);letter-spacing:.5px;}
+.ig{display:flex;flex-direction:column;gap:8px;}
+.inp{background:var(--surf);border:1px solid var(--border);border-radius:8px;color:var(--txt);font-family:'JetBrains Mono',monospace;font-size:13px;padding:10px 14px;outline:none;transition:border-color .2s;width:100%;}
+.inp:focus{border-color:var(--acc);}
+.inp::placeholder{color:var(--muted);}
+.btn{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--txt);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;padding:10px 18px;transition:all .15s;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;width:100%;}
+.btn:hover{background:var(--border);}
+.btn:active{transform:scale(.97);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-g{background:var(--acc);border-color:var(--acc);color:#000;}.btn-g:hover{background:#00e07a;}
+.btn-b{background:var(--acc2);border-color:var(--acc2);color:#000;}.btn-b:hover{background:#00b8e6;}
+.btn-r{background:var(--red);border-color:var(--red);color:#fff;}.btn-r:hover{background:#e03055;}
+.hint{font-size:11px;color:var(--muted);text-align:center;}
+
+/* room */
+#roomScreen{display:none;flex-direction:column;gap:14px;}
+#roomScreen.active{display:flex;}
+.room-hdr{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+.room-name{font-family:'Unbounded',sans-serif;font-size:14px;font-weight:700;color:var(--acc);margin-bottom:3px;}
+.room-id-row{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);}
+.room-id-val{background:var(--surf);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:11px;color:var(--acc2);cursor:pointer;transition:border-color .2s;}
+.room-id-val:hover{border-color:var(--acc2);}
+
+.room-body{display:grid;grid-template-columns:190px 1fr 280px;gap:14px;}
+@media(max-width:700px){.room-body{grid-template-columns:1fr;}}
+
+/* sidebar channels */
+.sidebar{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.sidebar-title{padding:12px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);}
+.ch-item{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.03);}
+.ch-item.active{background:rgba(0,255,136,.08);color:var(--acc);}
+.ch-icon{font-size:13px;opacity:.7;}
+.ch-name{flex:1;}
+.ch-cnt{font-size:10px;color:var(--muted);background:var(--surf);border-radius:10px;padding:1px 6px;}
+
+/* users */
+.users-panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.users-title{padding:12px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.users-cnt{background:var(--acc);color:#000;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;}
+.users-list{padding:8px;display:flex;flex-direction:column;gap:4px;min-height:160px;}
+.u-item{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;background:var(--surf);border:1px solid transparent;transition:all .2s;}
+.u-item.speaking{border-color:var(--acc);background:rgba(0,255,136,.05);box-shadow:0 0 10px rgba(0,255,136,.1);}
+.u-item.muted{opacity:.55;}
+.ava{width:32px;height:32px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:'Unbounded',sans-serif;overflow:hidden;}
+.ava img{width:100%;height:100%;object-fit:cover;border-radius:7px;}
+.u-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.u-badges{display:flex;gap:3px;align-items:center;}
+.you-tag{font-size:9px;color:var(--acc);background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.2);border-radius:4px;padding:1px 5px;font-weight:700;}
+.host-tag{font-size:9px;color:var(--warn);background:rgba(255,170,0,.1);border:1px solid rgba(255,170,0,.25);border-radius:4px;padding:1px 5px;font-weight:700;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,255,136,.4);}70%{box-shadow:0 0 0 7px rgba(0,255,136,0);}100%{box-shadow:0 0 0 0 rgba(0,255,136,0);}}
+.u-item.speaking .ava{animation:pulse 1.2s ease-out infinite;}
+.empty-st{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 16px;color:var(--muted);font-size:12px;gap:6px;text-align:center;}
+.empty-st .esi{font-size:26px;opacity:.4;}
+
+/* chat */
+.chat-panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden;height:100%;min-height:300px;}
+.chat-title{padding:12px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.chat-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:7px;}
+.chat-msg{display:flex;gap:7px;align-items:flex-start;}
+.chat-msg.mine{flex-direction:row-reverse;}
+.cm-ava{width:26px;height:26px;border-radius:7px;flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;font-family:'Unbounded',sans-serif;}
+.cm-ava img{width:100%;height:100%;object-fit:cover;}
+.cm-body{max-width:75%;}
+.chat-msg.mine .cm-body{align-items:flex-end;display:flex;flex-direction:column;}
+.cm-name{font-size:10px;color:var(--muted);margin-bottom:2px;}
+.chat-msg.mine .cm-name{text-align:right;}
+.cm-text{background:var(--surf);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12px;line-height:1.4;word-break:break-word;}
+.chat-msg.mine .cm-text{background:rgba(0,255,136,.07);border-color:rgba(0,255,136,.18);color:var(--acc);}
+.cm-time{font-size:9px;color:var(--muted);margin-top:2px;}
+.chat-sys{font-size:11px;color:var(--muted);text-align:center;font-style:italic;padding:1px 0;}
+.chat-inp-row{display:flex;gap:7px;padding:9px;border-top:1px solid var(--border);flex-shrink:0;}
+.chat-inp{flex:1;background:var(--surf);border:1px solid var(--border);border-radius:8px;color:var(--txt);font-family:'JetBrains Mono',monospace;font-size:12px;padding:8px 11px;outline:none;transition:border-color .2s;}
+.chat-inp:focus{border-color:var(--acc);}
+.chat-send{width:34px;height:34px;border-radius:8px;border:1px solid var(--acc);background:rgba(0,255,136,.08);color:var(--acc);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;flex-shrink:0;}
+.chat-send:hover{background:rgba(0,255,136,.18);}
+
+/* controls */
+.ctrl-bar{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+.ctrl-left{display:flex;align-items:center;gap:9px;}
+.ctrl-grp{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.ctrl-btn{width:42px;height:42px;border-radius:10px;border:1px solid var(--border);background:var(--surf);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:17px;transition:all .15s;}
+.ctrl-btn:hover{border-color:var(--acc);background:rgba(0,255,136,.05);}
+.ctrl-btn.muted{border-color:var(--red);background:rgba(255,68,102,.09);}
+.ctrl-btn:active{transform:scale(.92);}
+.ctrl-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.vol-sl{-webkit-appearance:none;appearance:none;width:88px;height:4px;border-radius:2px;background:var(--border);outline:none;cursor:pointer;}
+.vol-sl::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--acc);cursor:pointer;}
+
+/* log */
+.log-panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.log-title{padding:9px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;border-bottom:1px solid var(--border);}
+.log-entries{padding:7px 14px;max-height:90px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+.log-e{font-size:11px;color:var(--muted);display:flex;gap:7px;}
+.log-e .lt{color:rgba(102,102,170,.45);flex-shrink:0;}
+.log-e.info .lm{color:var(--acc2);}
+.log-e.ok .lm{color:var(--acc);}
+.log-e.warn .lm{color:var(--warn);}
+.log-e.err .lm{color:var(--red);}
+
+/* toast */
+.toast{position:fixed;bottom:22px;right:22px;background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:11px 16px;font-size:12px;z-index:1000;opacity:0;transform:translateY(7px);transition:all .2s;pointer-events:none;max-width:260px;}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.ok{border-color:var(--acc);color:var(--acc);}
+.toast.err{border-color:var(--red);color:var(--red);}
+.toast.info{border-color:var(--acc2);color:var(--acc2);}
+.toast.warn{border-color:var(--warn);color:var(--warn);}
+
+::-webkit-scrollbar{width:3px;height:3px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 </style>
 </head>
 <body>
@@ -149,727 +155,810 @@
   <header>
     <div class="logo">
       <div class="logo-icon">🎙</div>
-      <div class="logo-text">VoxRoom</div>
+      <div class="logo-txt">VoxRoom</div>
     </div>
-    <div class="status-badge">
-      <div class="dot" id="connDot"></div>
-      <span id="connStatus">не подключён</span>
+    <div class="conn-badge">
+      <div class="dot" id="dot"></div>
+      <span id="connTxt">не подключён</span>
     </div>
   </header>
 
+  <!-- LOBBY -->
   <div id="lobbyScreen" class="screen active">
     <div class="lobby">
       <div class="lobby-title">Голосовой чат<br><span>без регистрации</span></div>
-      <div class="lobby-sub">WebRTC P2P · без регистрации · прямо в браузере</div>
+      <div class="lobby-sub">WebRTC · Hub-топология · неограниченно участников</div>
       <div class="cards">
         <div class="card">
           <div class="card-title">// создать комнату</div>
-          <div class="input-group">
-            <input class="input" id="createNick" placeholder="Ник" maxlength="20">
-            <input class="input" id="createAvatar" placeholder="URL аватарки (необязательно)" maxlength="300">
-            <button class="btn btn-primary btn-full" id="createBtn" onclick="createRoom()">Создать</button>
+          <div class="ig">
+            <input class="inp" id="cNick" placeholder="Ник" maxlength="20">
+            <input class="inp" id="cAvatar" placeholder="URL аватарки (необязательно)" maxlength="400">
+            <button class="btn btn-g" id="cBtn" onclick="createRoom()">Создать</button>
           </div>
         </div>
         <div class="card">
           <div class="card-title">// войти в комнату</div>
-          <div class="input-group">
-            <input class="input" id="joinNick" placeholder="Ник" maxlength="20">
-            <input class="input" id="joinAvatar" placeholder="URL аватарки (необязательно)" maxlength="300">
-            <input class="input" id="joinRoomId" placeholder="ID комнаты" maxlength="12">
-            <button class="btn btn-secondary btn-full" id="joinBtn" onclick="joinRoom()">Войти</button>
+          <div class="ig">
+            <input class="inp" id="jNick" placeholder="Ник" maxlength="20">
+            <input class="inp" id="jAvatar" placeholder="URL аватарки (необязательно)" maxlength="400">
+            <input class="inp" id="jRoom" placeholder="ID комнаты" maxlength="12">
+            <button class="btn btn-b" id="jBtn" onclick="joinRoom()">Войти</button>
           </div>
         </div>
       </div>
-      <div class="hint">Создай комнату → ID скопируется → поделись с другом<br><b>M</b> в комнате — быстрый мут</div>
+      <div class="hint">Создай → ID скопируется → поделись · <b>M</b> = мут</div>
     </div>
   </div>
 
+  <!-- ROOM -->
   <div id="roomScreen" class="screen">
-    <div class="room-header">
+    <div class="room-hdr">
       <div>
-        <div class="room-name" id="roomTitle">Комната</div>
+        <div class="room-name" id="rTitle">Комната</div>
         <div class="room-id-row">
-          ID: <span class="room-id-val" id="roomIdDisplay" onclick="copyRoomId()">—</span>
-          <span style="font-size:10px;opacity:.4">← нажми чтобы скопировать</span>
+          ID: <span class="room-id-val" id="rId" onclick="copyId()">—</span>
+          <span style="font-size:10px;opacity:.35">← скопировать</span>
         </div>
       </div>
-      <button class="btn btn-danger" onclick="leaveRoom()">Выйти</button>
+      <button class="btn btn-r" style="width:auto;padding:9px 16px;" onclick="leaveRoom()">Выйти</button>
     </div>
 
-    <div class="room-layout">
+    <div class="room-body">
+      <!-- sidebar -->
       <div class="sidebar">
         <div class="sidebar-title">Каналы</div>
-        <div class="channel-item active"><span class="ch-icon">🔊</span><span class="ch-name">Основной</span><span class="ch-count" id="chCount">0</span></div>
-        <div class="channel-item" style="opacity:.4"><span class="ch-icon">🔇</span><span class="ch-name">AFK</span><span class="ch-count">0</span></div>
+        <div class="ch-item active"><span class="ch-icon">🔊</span><span class="ch-name">Основной</span><span class="ch-cnt" id="chCnt">0</span></div>
+        <div class="ch-item" style="opacity:.35"><span class="ch-icon">🔇</span><span class="ch-name">AFK</span></div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
-        <div class="users-panel">
-          <div class="users-title">Участники <span class="users-count" id="totalCount">0</span></div>
-          <div class="users-list" id="usersList">
-            <div class="empty-state"><div class="esi">👥</div><div>Здесь пока никого нет</div></div>
-          </div>
+
+      <!-- users -->
+      <div class="users-panel">
+        <div class="users-title">Участники <span class="users-cnt" id="uCnt">0</span></div>
+        <div class="users-list" id="uList">
+          <div class="empty-st"><div class="esi">👥</div><div>Пусто</div></div>
         </div>
-        <div class="chat-panel">
-          <div class="chat-title">💬 Чат</div>
-          <div class="chat-messages" id="chatMessages"></div>
-          <div class="chat-input-row">
-            <input class="chat-input" id="chatInput" placeholder="Напиши сообщение…" maxlength="500" onkeydown="if(event.key==='Enter')sendChat()">
-            <button class="chat-send-btn" onclick="sendChat()" title="Отправить">➤</button>
-          </div>
+      </div>
+
+      <!-- chat -->
+      <div class="chat-panel">
+        <div class="chat-title">💬 Чат</div>
+        <div class="chat-msgs" id="chatBox"></div>
+        <div class="chat-inp-row">
+          <input class="chat-inp" id="chatInp" placeholder="Сообщение…" maxlength="500"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}">
+          <button class="chat-send" onclick="sendMsg()" title="Отправить">➤</button>
         </div>
       </div>
     </div>
 
-    <div class="controls-bar">
-      <div class="controls-left">
-        <div class="ctrl-group">
+    <div class="ctrl-bar">
+      <div class="ctrl-left">
+        <div class="ctrl-grp">
           <div class="ctrl-btn" id="muteBtn" onclick="toggleMute()">🎙</div>
-          <div class="ctrl-label">Микрофон</div>
+          <div class="ctrl-lbl">Микрофон</div>
         </div>
-        <div class="ctrl-group">
+        <div class="ctrl-grp">
           <div class="ctrl-btn" id="deafBtn" onclick="toggleDeaf()">🔊</div>
-          <div class="ctrl-label">Звук</div>
+          <div class="ctrl-lbl">Звук</div>
         </div>
-        <div class="ctrl-group" style="margin-left:8px">
-          <input type="range" class="vol-slider" id="volSlider" min="0" max="100" value="100" oninput="setVolume(this.value)">
-          <div class="ctrl-label">Громкость</div>
+        <div class="ctrl-grp" style="margin-left:6px;">
+          <input type="range" class="vol-sl" id="volSl" min="0" max="100" value="100" oninput="setVol(this.value)">
+          <div class="ctrl-lbl">Громкость</div>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--muted)" id="myNickDisplay"></div>
+      <div id="myLabel" style="font-size:12px;color:var(--muted);"></div>
     </div>
 
     <div class="log-panel">
-      <div class="log-title">Журнал событий</div>
-      <div class="log-entries" id="logEntries"></div>
+      <div class="log-title">Журнал</div>
+      <div class="log-entries" id="logBox"></div>
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toastEl"></div>
 
 <script>
-// ════════════════════════════════════════════════════════
-//  VoxRoom — Hub topology
-//  Host = мicrophone mixer. Everyone connects only to host.
-//  Host receives all streams, mixes them via WebAudio,
-//  and sends a unique mixed stream to each participant
-//  (excluding that participant's own voice from their mix).
-//
-//  Participant → Host: raw mic stream
-//  Host → Participant: mixed stream of everyone ELSE
-// ════════════════════════════════════════════════════════
-
-const ICE = [
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════
+const ICE_SERVERS = [
   {urls:'stun:stun.l.google.com:19302'},
   {urls:'stun:stun1.l.google.com:19302'},
   {urls:'stun:stun2.l.google.com:19302'},
-  {urls:'stun:stun3.l.google.com:19302'},
   {urls:'stun:stun.cloudflare.com:3478'},
   {urls:'turn:global.relay.metered.ca:80',               username:'openrelayproject',credential:'openrelayproject'},
   {urls:'turn:global.relay.metered.ca:443',              username:'openrelayproject',credential:'openrelayproject'},
   {urls:'turn:global.relay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
 ];
 
-// Multiple signalling brokers — tried in order until one works
-const BROKERS = [
-  // broker.peerjs.com — official stable endpoint
-  {host:'broker.peerjs.com', port:443, path:'/', secure:true},
-  // 0.peerjs.com fallback
-  {host:'0.peerjs.com', port:443, path:'/', secure:true},
-  // null = PeerJS SDK picks its own default
-  null
-];
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let peer = null;        // PeerJS instance
+let myStream = null;    // local mic stream
+let myId = null;
+let myNick = '';
+let myAvatar = '';
+let roomId = null;
+let amHost = false;
+let isMuted = false;
+let isDeaf = false;
+let vol = 1.0;
 
-// ── State ────────────────────────────────────────────────
-let myPeer=null, myStream=null, myId=null, myNick='', myAvatar='', roomId=null;
-let amHost=false;
-let isMuted=false, isDeaf=false, volume=1.0;
+// Host state
+const parts = {};       // pid → {nick, avatar, dataConn, srcNode, gainNode, stream}
+const outCalls = {};    // pid → outgoing MediaConnection (host→participant)
+let audioCtx = null;
+let masterDest = null;
 
-// HOST only: participants[pid] = {nick, call(incoming), dataConn, sourceNode, gainNode}
-const participants = {};
-// HOST only: WebAudio mixer
-let audioCtx=null, masterDest=null;
+// Client state
+let hostConn = null;    // DataConnection to host
+let hostCall = null;    // incoming MediaConnection from host (mixed audio)
+let clientAudio = null; // <audio> element
 
-// CLIENT only: hostCall, hostDataConn
-let hostCall=null, hostDataConn=null;
+// Shared display state
+const users = {};       // pid → {nick, avatar, muted}
 
-// All users display list: {pid, nick, muted}
-const userList = {}; // pid → {nick, muted}
+// ═══════════════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════════════
+const G = id => document.getElementById(id);
 
-// ── UI helpers ───────────────────────────────────────────
-const $=id=>document.getElementById(id);
-function setConn(txt,mode=''){$('connStatus').textContent=txt;$('connDot').className='dot'+(mode?' '+mode:'');}
-function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');}
+function setConn(txt, mode) {
+  G('connTxt').textContent = txt;
+  G('dot').className = 'dot' + (mode ? ' '+mode : '');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  G(id).classList.add('active');
+}
+
 let _tt;
-function toast(msg,type='info'){const e=$('toast');e.textContent=msg;e.className='toast show '+type;clearTimeout(_tt);_tt=setTimeout(()=>e.className='toast',3200);}
-function log(msg,type=''){
-  const el=$('logEntries');
-  const d=new Date();
-  const t=[d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
-  const e=document.createElement('div');
-  e.className='log-entry '+type;
-  e.innerHTML='<span class="lt">'+t+'</span><span class="lm">'+msg+'</span>';
-  el.appendChild(e); el.scrollTop=el.scrollHeight;
+function toast(msg, type='info') {
+  const e = G('toastEl');
+  e.textContent = msg;
+  e.className = 'toast show ' + type;
+  clearTimeout(_tt);
+  _tt = setTimeout(() => e.className='toast', 3200);
 }
-function setBtn(id,dis){const b=$(id);if(b)b.disabled=dis;}
 
-// ── Avatars ──────────────────────────────────────────────
-const AVC=[['#00ff88','#003322'],['#00ccff','#002233'],['#ff6688','#330011'],['#ffaa00','#332200'],['#aa88ff','#220033'],['#44ddaa','#001122']];
-function avatarColor(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))&0xffff;return AVC[h%AVC.length];}
-function ini(n){return n.substring(0,2).toUpperCase();}
+function log(msg, type='') {
+  const box = G('logBox');
+  const d = new Date();
+  const t = [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const e = document.createElement('div');
+  e.className = 'log-e ' + type;
+  e.innerHTML = '<span class="lt">'+t+'</span><span class="lm">'+msg+'</span>';
+  box.appendChild(e);
+  box.scrollTop = box.scrollHeight;
+}
 
-// ── Chat ──────────────────────────────────────────────────
-function nowHH(){const d=new Date();return[d.getHours(),d.getMinutes()].map(n=>String(n).padStart(2,'0')).join(':');}
-function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function setBtn(id, dis) { const b=G(id); if(b) b.disabled=dis; }
 
-function appendChatMsg(id,nick,avatar,text,isSystem){
-  const box=document.getElementById('chatMessages');
-  if(!box) return;
-  if(isSystem){
-    const d=document.createElement('div');
-    d.className='chat-sys'; d.textContent=text;
-    box.appendChild(d); box.scrollTop=box.scrollHeight; return;
+// ═══════════════════════════════════════════════════════════════
+//  AVATARS & COLORS
+// ═══════════════════════════════════════════════════════════════
+const AVC = [
+  ['#00ff88','#003322'],['#00ccff','#002233'],['#ff6688','#330011'],
+  ['#ffaa00','#332200'],['#aa88ff','#220033'],['#44ddaa','#001122']
+];
+function avaColor(s) {
+  let h=0; for(const c of s) h=(h*31+c.charCodeAt(0))&0xffff;
+  return AVC[h%AVC.length];
+}
+function ini(n) { return n.substring(0,2).toUpperCase(); }
+
+function avaHTML(nick, avatar, size=32) {
+  const [bg,fg] = avaColor(nick);
+  if (avatar) {
+    return `<div class="ava" style="width:${size}px;height:${size}px;"><img src="${avatar}" onerror="this.parentNode.innerHTML='${ini(nick)}';this.parentNode.style.background='${bg}';this.parentNode.style.color='${fg}';"></div>`;
   }
-  const isMe=(id===myId);
-  const [bg,fg]=avatarColor(nick);
-  const avHTML=avatar
-    ? '<div class="chat-msg-avatar"><img src="'+avatar+'" onerror="this.style.display=\'none\'" loading="lazy"></div>'
-    : '<div class="chat-msg-avatar" style="background:'+bg+';color:'+fg+'">'+ini(nick)+'</div>';
-  const d=document.createElement('div');
-  d.className='chat-msg'+(isMe?' mine':'');
-  d.innerHTML=avHTML+'<div class="chat-msg-body"><div class="chat-msg-name">'+escH(nick)+'</div><div class="chat-msg-text">'+escH(text)+'</div><div class="chat-msg-time">'+nowHH()+'</div></div>';
-  box.appendChild(d); box.scrollTop=box.scrollHeight;
+  return `<div class="ava" style="width:${size}px;height:${size}px;background:${bg};color:${fg};">${ini(nick)}</div>`;
 }
 
-function sendChat(){
-  const inp=document.getElementById('chatInput');
-  if(!inp) return;
-  const text=inp.value.trim(); if(!text) return; inp.value='';
-  const msg={type:'chat',id:myId,nick:myNick,avatar:myAvatar,text};
-  appendChatMsg(myId,myNick,myAvatar,text,false);
-  if(amHost) broadcastHost(msg);
-  else if(hostDataConn&&hostDataConn.open) hostDataConn.send(msg);
+// ═══════════════════════════════════════════════════════════════
+//  CHAT
+// ═══════════════════════════════════════════════════════════════
+function hh() {
+  const d=new Date();
+  return [d.getHours(),d.getMinutes()].map(n=>String(n).padStart(2,'0')).join(':');
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ── Render users ─────────────────────────────────────────
-const speakT={};
-function renderUsers(){
-  const list=$('usersList');
-  const entries=Object.entries(userList).map(([id,u])=>({id,...u}));
-  list.querySelectorAll('.user-item').forEach(el=>{
-    if(!entries.find(e=>e.id===el.dataset.pid)) el.remove();
+function appendMsg(id, nick, avatar, text, sys) {
+  const box = G('chatBox');
+  if (!box) return;
+  if (sys) {
+    const d = document.createElement('div');
+    d.className = 'chat-sys';
+    d.textContent = text;
+    box.appendChild(d);
+  } else {
+    const mine = (id === myId);
+    const av = avaHTML(nick, avatar, 26).replace('class="ava"', 'class="cm-ava"');
+    const d = document.createElement('div');
+    d.className = 'chat-msg' + (mine ? ' mine' : '');
+    d.innerHTML = av +
+      `<div class="cm-body">
+        <div class="cm-name">${esc(nick)}</div>
+        <div class="cm-text">${esc(text)}</div>
+        <div class="cm-time">${hh()}</div>
+      </div>`;
+    box.appendChild(d);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendMsg() {
+  const inp = G('chatInp');
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  const msg = {type:'chat', id:myId, nick:myNick, avatar:myAvatar, text};
+  appendMsg(myId, myNick, myAvatar, text, false);
+  if (amHost) bcastHost(msg);
+  else if (hostConn && hostConn.open) hostConn.send(msg);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER USERS
+// ═══════════════════════════════════════════════════════════════
+const spkT = {};
+function renderUsers() {
+  const list = G('uList');
+  const entries = Object.entries(users);
+
+  // Remove stale
+  list.querySelectorAll('.u-item').forEach(el => {
+    if (!users[el.dataset.pid]) el.remove();
   });
-  if(entries.length) list.querySelector('.empty-state')?.remove();
-  for(const u of entries){
-    let item=$('ui-'+u.id);
-    if(!item){
-      item=document.createElement('div');
-      item.className='user-item'; item.id='ui-'+u.id; item.dataset.pid=u.id;
+
+  if (entries.length) list.querySelector('.empty-st')?.remove();
+  else if (!list.querySelector('.empty-st')) {
+    list.innerHTML = '<div class="empty-st"><div class="esi">👥</div><div>Пусто</div></div>';
+  }
+
+  for (const [pid, u] of entries) {
+    let item = G('ui-'+pid);
+    if (!item) {
+      item = document.createElement('div');
+      item.className = 'u-item';
+      item.id = 'ui-'+pid;
+      item.dataset.pid = pid;
       list.appendChild(item);
     }
-    const [bg,fg]=avatarColor(u.nick);
-    item.className='user-item'+(u.muted?' muted-user':'');
-    item.innerHTML=
-      '<div class="avatar" style="background:'+bg+';color:'+fg+'">'+ini(u.nick)+'</div>'+
-      '<div class="user-name">'+u.nick+'</div>'+
-      '<div class="user-badges">'+
-        (u.muted?'<span title="Заглушен">🔇</span>':'')+
-        (u.id===myId?'<span class="you-tag">ВЫ</span>':'')+
-        (u.id===myId&&amHost?'<span class="you-tag" style="background:rgba(255,170,0,.15);border-color:rgba(255,170,0,.3);color:#fa0">HOST</span>':'')+
-      '</div>';
+    const isMe = pid === myId;
+    const isH = amHost && isMe;
+    item.className = 'u-item' + (u.muted ? ' muted' : '');
+    item.innerHTML =
+      avaHTML(u.nick, u.avatar) +
+      `<div class="u-name">${esc(u.nick)}</div>` +
+      `<div class="u-badges">` +
+        (u.muted ? '<span title="Заглушен">🔇</span>' : '') +
+        (isMe  ? '<span class="you-tag">ВЫ</span>' : '') +
+        (isH   ? '<span class="host-tag">HOST</span>' : '') +
+      `</div>`;
   }
-  if(!entries.length) list.innerHTML='<div class="empty-state"><div class="esi">👥</div><div>Здесь пока никого нет</div></div>';
-  $('chCount').textContent=entries.length;
-  $('totalCount').textContent=entries.length;
+
+  const cnt = entries.length;
+  G('chCnt').textContent = cnt;
+  G('uCnt').textContent = cnt;
 }
 
-function watchSpeaking(stream,pid){
-  try{
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const src=ctx.createMediaStreamSource(stream);
-    const an=ctx.createAnalyser(); an.fftSize=256; src.connect(an);
-    const buf=new Uint8Array(an.frequencyBinCount);
-    function tick(){
-      if(!$('roomScreen').classList.contains('active')){ctx.close();return;}
+function watchSpeak(stream, pid) {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser(); an.fftSize=256; src.connect(an);
+    const buf = new Uint8Array(an.frequencyBinCount);
+    function tick() {
+      if (!G('roomScreen').classList.contains('active')) { ctx.close(); return; }
       an.getByteFrequencyData(buf);
-      const avg=buf.reduce((a,b)=>a+b,0)/buf.length;
-      const el=$('ui-'+pid);
-      if(el&&avg>8){el.classList.add('speaking');clearTimeout(speakT[pid]);speakT[pid]=setTimeout(()=>el.classList.remove('speaking'),400);}
+      const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
+      const el = G('ui-'+pid);
+      if (el && avg>8) {
+        el.classList.add('speaking');
+        clearTimeout(spkT[pid]);
+        spkT[pid] = setTimeout(()=>el.classList.remove('speaking'), 400);
+      }
       requestAnimationFrame(tick);
     }
     tick();
-  }catch(e){}
+  } catch(e) {}
 }
 
-// ── Play audio (client side) ─────────────────────────────
-let clientAudioEl=null;
-function playHostStream(stream){
-  if(!clientAudioEl){
-    clientAudioEl=document.createElement('audio');
-    clientAudioEl.autoplay=true; clientAudioEl.style.display='none';
-    document.body.appendChild(clientAudioEl);
-  }
-  clientAudioEl.srcObject=stream;
-  clientAudioEl.volume=isDeaf?0:volume;
-  clientAudioEl.play().catch(()=>{});
-  log('Аудио подключено','success');
+// ═══════════════════════════════════════════════════════════════
+//  HOST — AUDIO MIXER
+// ═══════════════════════════════════════════════════════════════
+function initCtx() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  masterDest = audioCtx.createMediaStreamDestination();
 }
 
-// ════════════════════════════════════════════════════════
-//  HOST LOGIC
-// ════════════════════════════════════════════════════════
-
-function initAudioCtx(){
-  if(audioCtx) return;
-  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-  masterDest=audioCtx.createMediaStreamDestination(); // not really used now
-}
-
-// outCalls: pid → MediaConnection (the call where host sends mix to participant)
-const outCalls={};
-
-// Add participant's stream into the host mixer
-function hostAddStream(pid, stream){
-  initAudioCtx();
-  // Disconnect old nodes if any
-  try{participants[pid].sourceNode?.disconnect();}catch(e){}
-  try{participants[pid].gainNode?.disconnect();}catch(e){}
-
-  const src=audioCtx.createMediaStreamSource(stream);
-  const gain=audioCtx.createGain(); gain.gain.value=1.0;
-  src.connect(gain);
-  // Connect to master dest so others can hear this participant
-  gain.connect(masterDest);
-
-  participants[pid].sourceNode=src;
-  participants[pid].gainNode=gain;
-  participants[pid].stream=stream;
-  log('Поток '+( participants[pid].nick||pid)+' в микшере','info');
-  watchSpeaking(stream, pid);
-}
-
-// Build a mixed stream for ONE participant = everyone except them
-// Uses a per-call destination so each participant gets a tailored mix
-function buildMixFor(excludePid){
-  const dest=audioCtx.createMediaStreamDestination();
-  // Add host's own mic
-  if(myStream){
-    const src=audioCtx.createMediaStreamSource(myStream);
+function buildMixFor(excludePid) {
+  // Create a fresh destination for this participant's mix
+  const dest = audioCtx.createMediaStreamDestination();
+  // Host's own mic
+  if (myStream) {
+    const src = audioCtx.createMediaStreamSource(myStream);
     src.connect(dest);
   }
-  // Add all other participants except the target
-  for(const [pid,p] of Object.entries(participants)){
-    if(pid===excludePid) continue;
-    if(p.gainNode) p.gainNode.connect(dest);
+  // All other participants except excludePid
+  for (const [pid, p] of Object.entries(parts)) {
+    if (pid === excludePid) continue;
+    if (p.gainNode) p.gainNode.connect(dest);
   }
   return dest.stream;
 }
 
-// Replace audio track in an existing outgoing call with a new stream
-function replaceTrackInCall(call, stream){
-  try{
-    const pc=call.peerConnection;
-    if(!pc) return;
-    const track=stream.getAudioTracks()[0];
-    if(!track) return;
-    const sender=pc.getSenders().find(s=>s.track&&s.track.kind==='audio');
-    if(sender) sender.replaceTrack(track).catch(()=>{});
-  }catch(e){}
-}
-
-// After any stream is added/removed, push updated mixes to all participants
-function rebuildMixes(){
-  for(const [pid,] of Object.entries(participants)){
-    if(!outCalls[pid]) continue;
-    const mix=buildMixFor(pid);
-    replaceTrackInCall(outCalls[pid], mix);
+function updateMixes() {
+  for (const [pid,] of Object.entries(parts)) {
+    if (!outCalls[pid]) continue;
+    const mix = buildMixFor(pid);
+    try {
+      const pc = outCalls[pid].peerConnection;
+      if (!pc) continue;
+      const sender = pc.getSenders().find(s => s.track && s.track.kind==='audio');
+      if (sender) {
+        const track = mix.getAudioTracks()[0];
+        if (track) sender.replaceTrack(track).catch(()=>{});
+      }
+    } catch(e) {}
   }
 }
 
-// Host: handle incoming audio call FROM participant
-// We answer with that participant's personal mix right away
-function hostHandleCall(call){
-  const pid=call.peer;
+function hostAddStream(pid, stream) {
+  if (!parts[pid]) return;
+  initCtx();
+  // Clean old nodes
+  try { parts[pid].srcNode?.disconnect(); } catch(e) {}
+  try { parts[pid].gainNode?.disconnect(); } catch(e) {}
 
-  // Build mix for this participant (at call time, before their stream arrives)
-  initAudioCtx();
-  const mix=buildMixFor(pid);
+  const src  = audioCtx.createMediaStreamSource(stream);
+  const gain = audioCtx.createGain(); gain.gain.value = 1.0;
+  src.connect(gain);
+  // Connect to master (used for mix building)
+  gain.connect(masterDest);
 
+  parts[pid].srcNode  = src;
+  parts[pid].gainNode = gain;
+  parts[pid].stream   = stream;
+
+  log('Поток от ' + (parts[pid].nick||pid), 'ok');
+  updateMixes();
+  watchSpeak(stream, pid);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HOST — INCOMING CONNECTIONS
+// ═══════════════════════════════════════════════════════════════
+function hostOnData(conn) {
+  const pid = conn.peer;
+  conn.on('data', msg => {
+    if (!msg || !msg.type) return;
+
+    if (msg.type === 'join') {
+      const nick   = msg.nick   || 'Unknown';
+      const avatar = msg.avatar || '';
+      log(nick + ' подключается…', 'info');
+
+      // Register
+      parts[pid] = { nick, avatar, dataConn:conn, srcNode:null, gainNode:null, stream:null };
+      users[pid] = { nick, avatar, muted:false };
+
+      // Send welcome: full current user list
+      const ul = Object.entries(users)
+        .filter(([id]) => id !== pid)
+        .map(([id, u]) => ({id, nick:u.nick, avatar:u.avatar||'', muted:u.muted}));
+      conn.send({ type:'welcome', users:ul, hostId:myId, hostNick:myNick, hostAvatar:myAvatar });
+
+      // Notify everyone else about newcomer
+      bcastHost({ type:'user_joined', id:pid, nick, avatar });
+      appendMsg(pid, nick, avatar, nick+' вошёл в комнату', true);
+
+      toast(nick+' вошёл', 'ok');
+      log(nick+' вошёл', 'ok');
+      renderUsers();
+    }
+
+    if (msg.type === 'mute') {
+      if (users[pid])  users[pid].muted  = msg.muted;
+      if (parts[pid])  parts[pid].muted  = msg.muted;
+      bcastHost({ type:'user_mute', id:pid, muted:msg.muted });
+      renderUsers();
+    }
+
+    if (msg.type === 'chat') {
+      // Relay to everyone else
+      for (const [eid, ep] of Object.entries(parts))
+        if (eid !== pid && ep.dataConn?.open)
+          try { ep.dataConn.send(msg); } catch(e) {}
+      appendMsg(msg.id||pid, msg.nick, msg.avatar||'', msg.text, false);
+    }
+
+    if (msg.type === 'leave') hostRemove(pid);
+  });
+  conn.on('close', () => hostRemove(pid));
+  conn.on('error', () => hostRemove(pid));
+}
+
+function hostOnCall(call) {
+  const pid = call.peer;
+  initCtx();
+  // Answer immediately with this participant's mix
+  const mix = buildMixFor(pid);
   call.answer(mix);
-  outCalls[pid]=call;
+  outCalls[pid] = call;
 
-  call.on('stream', stream=>{
-    // Got participant's mic stream — add to mixer, then update everyone's mixes
-    if(participants[pid]){
+  call.on('stream', stream => {
+    if (parts[pid]) {
       hostAddStream(pid, stream);
     } else {
-      // Data channel might not have fired 'join' yet — retry briefly
-      const tries=[200,500,1000,2000];
-      let i=0;
-      function retry(){
-        if(participants[pid]){hostAddStream(pid,stream);}
-        else if(i<tries.length){setTimeout(retry,tries[i++]);}
-        else{log('Поток от '+pid+' потерян','warn');}
-      }
-      retry();
-    }
-    // After we have their stream, push updated mixes to everyone
-    rebuildMixes();
-  });
-
-  call.on('close',()=>{
-    delete outCalls[pid];
-    rebuildMixes();
-  });
-  call.on('error',()=>{
-    delete outCalls[pid];
-    rebuildMixes();
-  });
-}
-  const pid=conn.peer;
-  conn.on('data',msg=>{
-    if(!msg||!msg.type) return;
-    if(msg.type==='join'){
-      const nick=msg.nick; const avatar=msg.avatar||'';
-      log(nick+' подключается…','info');
-      const ul=Object.entries(userList).map(([id,u])=>({id,nick:u.nick,muted:u.muted,avatar:u.avatar||''}));
-      conn.send({type:'welcome', users:ul, hostNick:myNick, hostId:myId, hostAvatar:myAvatar});
-      participants[pid]={nick, avatar, dataConn:conn, sourceNode:null, gainNode:null, stream:null};
-      userList[pid]={nick, avatar, muted:false};
-      broadcastHost({type:'user_joined', id:pid, nick, avatar});
-      appendChatMsg(pid, nick, avatar, nick+' вошёл в комнату', true);
-      toast(nick+' вошёл','success');
-      log(nick+' вошёл','success');
-      renderUsers();
-    }
-    if(msg.type==='mute'){
-      if(userList[pid]) userList[pid].muted=msg.muted;
-      if(participants[pid]) participants[pid].muted=msg.muted;
-      broadcastHost({type:'user_mute', id:pid, muted:msg.muted});
-      renderUsers();
-    }
-    if(msg.type==='chat'){
-      // relay to all other participants
-      for(const [eid,ep] of Object.entries(participants))
-        if(eid!==pid&&ep.dataConn&&ep.dataConn.open) try{ep.dataConn.send(msg);}catch(e){}
-      appendChatMsg(msg.id||pid, msg.nick, msg.avatar||'', msg.text, false);
-    }
-    if(msg.type==='leave'){
-      hostRemoveParticipant(pid);
+      // Data channel join might arrive slightly later
+      let tries = 0;
+      const wait = () => {
+        if (parts[pid]) hostAddStream(pid, stream);
+        else if (tries++ < 10) setTimeout(wait, 300);
+        else log('Поток от '+pid+': участник не найден', 'warn');
+      };
+      setTimeout(wait, 200);
     }
   });
-  conn.on('close',()=>hostRemoveParticipant(pid));
-  conn.on('error',()=>hostRemoveParticipant(pid));
+  call.on('close', () => { delete outCalls[pid]; updateMixes(); });
+  call.on('error', () => { delete outCalls[pid]; updateMixes(); });
 }
 
-function hostRemoveParticipant(pid){
-  if(!participants[pid]) return;
-  const nick=participants[pid].nick||pid;
-  try{participants[pid].sourceNode?.disconnect();}catch(e){}
-  try{participants[pid].gainNode?.disconnect();}catch(e){}
-  try{outCalls[pid]?.close();}catch(e){}
+function hostRemove(pid) {
+  if (!parts[pid]) return;
+  const nick = parts[pid].nick || pid;
+  try { parts[pid].srcNode?.disconnect();  } catch(e) {}
+  try { parts[pid].gainNode?.disconnect(); } catch(e) {}
+  try { outCalls[pid]?.close();            } catch(e) {}
   delete outCalls[pid];
-  delete participants[pid];
-  delete userList[pid];
-  broadcastHost({type:'user_left', id:pid, nick});
-  log(nick+' вышел','warn');
-  toast(nick+' покинул комнату','warn');
+  delete parts[pid];
+  delete users[pid];
+  bcastHost({ type:'user_left', id:pid, nick });
+  appendMsg(pid, nick, '', nick+' покинул комнату', true);
+  toast(nick+' вышел', 'warn');
+  log(nick+' вышел', 'warn');
   renderUsers();
-  rebuildMixes();
+  updateMixes();
 }
 
-function broadcastHost(msg){
-  for(const [,p] of Object.entries(participants)){
-    if(p.dataConn&&p.dataConn.open) try{p.dataConn.send(msg);}catch(e){}
-  }
+function bcastHost(msg) {
+  for (const [, p] of Object.entries(parts))
+    if (p.dataConn?.open) try { p.dataConn.send(msg); } catch(e) {}
 }
 
-// ════════════════════════════════════════════════════════
-//  CLIENT LOGIC
-// ════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  CLIENT — CONNECT TO HOST
+// ═══════════════════════════════════════════════════════════════
+function clientConnect(hostId) {
+  log('Коннектимся к хосту…', 'info');
 
-function clientConnect(hostId){
-  log('Подключаемся к хосту…','info');
-  // 1. Open data channel
-  const conn=myPeer.connect(hostId,{reliable:true});
-  hostDataConn=conn;
-  conn.on('open',()=>{
-    log('Data-канал открыт','info');
-    conn.send({type:'join', nick:myNick, avatar:myAvatar});
-  });
-  conn.on('data',msg=>{
-    if(!msg||!msg.type) return;
-    if(msg.type==='welcome'){
-      for(const u of msg.users) userList[u.id]={nick:u.nick, muted:u.muted, avatar:u.avatar||''};
-      userList[msg.hostId]={nick:msg.hostNick, muted:false, avatar:msg.hostAvatar||''};
-      userList[myId]={nick:myNick, muted:isMuted, avatar:myAvatar};
-      renderUsers();
-      toast('Подключён к комнате!','success');
-      log('В комнате: '+Object.keys(userList).length+' чел.','success');
-    }
-    if(msg.type==='user_joined'){
-      userList[msg.id]={nick:msg.nick, muted:false, avatar:msg.avatar||''};
-      appendChatMsg(msg.id, msg.nick, msg.avatar||'', msg.nick+' вошёл в комнату', true);
-      toast(msg.nick+' вошёл','success');
-      log(msg.nick+' вошёл','success');
-      renderUsers();
-    }
-    if(msg.type==='user_left'){
-      appendChatMsg(msg.id, msg.nick, '', msg.nick+' покинул комнату', true);
-      delete userList[msg.id];
-      toast(msg.nick+' вышел','warn');
-      log(msg.nick+' вышел','warn');
-      renderUsers();
-    }
-    if(msg.type==='user_mute'){
-      if(userList[msg.id]) userList[msg.id].muted=msg.muted;
-      renderUsers();
-    }
-    if(msg.type==='chat'){
-      appendChatMsg(msg.id||'?', msg.nick, msg.avatar||'', msg.text, false);
-    }
-  });
-  conn.on('close',()=>{toast('Соединение с хостом потеряно','error');log('Хост отключился','error');});
-  conn.on('error',e=>{toast('Ошибка: '+e.message,'error');log('Ошибка data: '+e.message,'error');});
+  // 1. Data channel
+  const conn = peer.connect(hostId, { reliable:true });
+  hostConn = conn;
 
-  // 2. Call host with our mic stream
-  setTimeout(()=>{
-    log('Звоним хосту…','info');
-    const call=myPeer.call(hostId, myStream, {config:{iceServers:ICE}});
-    hostCall=call;
-    call.on('stream', stream=>{
-      log('Получили микс от хоста','success');
-      playHostStream(stream);
+  conn.on('open', () => {
+    log('Data-канал открыт', 'ok');
+    conn.send({ type:'join', nick:myNick, avatar:myAvatar });
+  });
+
+  conn.on('data', msg => {
+    if (!msg || !msg.type) return;
+
+    if (msg.type === 'welcome') {
+      // Populate users list
+      for (const u of msg.users)
+        users[u.id] = { nick:u.nick, avatar:u.avatar||'', muted:u.muted };
+      users[msg.hostId] = { nick:msg.hostNick, avatar:msg.hostAvatar||'', muted:false };
+      users[myId] = { nick:myNick, avatar:myAvatar, muted:isMuted };
+      renderUsers();
+      toast('Подключён!', 'ok');
+      log('В комнате: '+Object.keys(users).length+' чел.', 'ok');
+    }
+    if (msg.type === 'user_joined') {
+      users[msg.id] = { nick:msg.nick, avatar:msg.avatar||'', muted:false };
+      appendMsg(msg.id, msg.nick, msg.avatar||'', msg.nick+' вошёл в комнату', true);
+      toast(msg.nick+' вошёл', 'ok');
+      log(msg.nick+' вошёл', 'ok');
+      renderUsers();
+    }
+    if (msg.type === 'user_left') {
+      appendMsg(msg.id, msg.nick, '', msg.nick+' покинул комнату', true);
+      delete users[msg.id];
+      toast(msg.nick+' вышел', 'warn');
+      log(msg.nick+' вышел', 'warn');
+      renderUsers();
+    }
+    if (msg.type === 'user_mute') {
+      if (users[msg.id]) users[msg.id].muted = msg.muted;
+      renderUsers();
+    }
+    if (msg.type === 'chat') {
+      appendMsg(msg.id||'?', msg.nick, msg.avatar||'', msg.text, false);
+    }
+    if (msg.type === 'host_leaving') {
+      toast('Хост покинул комнату', 'warn');
+      log('Хост закрыл комнату', 'warn');
+    }
+  });
+
+  conn.on('close', () => { toast('Соединение с хостом потеряно', 'err'); log('Хост отключился', 'err'); });
+  conn.on('error', e => { toast('Ошибка: '+e.message, 'err'); log('Err: '+e.message, 'err'); });
+
+  // 2. Audio call to host — send our mic, receive mixed stream
+  setTimeout(() => {
+    log('Звоним хосту…', 'info');
+    const call = peer.call(hostId, myStream, { config:{iceServers:ICE_SERVERS} });
+    hostCall = call;
+    call.on('stream', stream => {
+      log('Получили аудио-микс', 'ok');
+      if (!clientAudio) {
+        clientAudio = document.createElement('audio');
+        clientAudio.autoplay = true;
+        clientAudio.style.display = 'none';
+        document.body.appendChild(clientAudio);
+      }
+      clientAudio.srcObject = stream;
+      clientAudio.volume = isDeaf ? 0 : vol;
+      clientAudio.play().catch(()=>{});
     });
-    call.on('close',()=>log('Аудио-звонок с хостом закрыт','warn'));
-    call.on('error',e=>log('Ошибка звонка: '+e.message,'error'));
-  }, 500);
+    call.on('close', () => log('Аудио с хостом закрыто', 'warn'));
+    call.on('error', e => log('Аудио ошибка: '+e.message, 'err'));
+  }, 600);
 }
 
-// ════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 //  PEER SETUP
-// ════════════════════════════════════════════════════════
-function setupPeer(){
-  if(amHost){
-    myPeer.on('connection',conn=>{
-      const pid=conn.peer;
-      if(!participants[pid]) participants[pid]={nick:null,dataConn:null,sourceNode:null,gainNode:null,stream:null};
-      participants[pid].dataConn=conn;
-      conn.on('open',()=>hostHandleDataConn(conn));
+// ═══════════════════════════════════════════════════════════════
+function setupPeer() {
+  if (amHost) {
+    peer.on('connection', conn => {
+      const pid = conn.peer;
+      // Pre-register slot so hostOnCall can find it
+      if (!parts[pid]) parts[pid] = { nick:null, avatar:'', dataConn:null, srcNode:null, gainNode:null, stream:null };
+      parts[pid].dataConn = conn;
+      conn.on('open', () => hostOnData(conn));
     });
-    myPeer.on('call',call=>hostHandleCall(call));
+    peer.on('call', call => hostOnCall(call));
   }
-  // Both host and client handle disconnects
-  myPeer.on('disconnected',()=>{
-    setConn('переподключение…','warn');
-    let n=0;
-    function retry(){
-      if(!myPeer||myPeer.destroyed) return;
-      if(myPeer.open){setConn('онлайн','online');return;}
-      if(n>=5){toast('Разрыв — обнови страницу','error');setConn('разрыв','warn');return;}
-      n++;log('Реконнект '+n+'/5…','warn');
-      try{myPeer.reconnect();}catch(e){}
-      setTimeout(()=>{if(myPeer&&!myPeer.open)retry();},2000*n);
+
+  peer.on('disconnected', () => {
+    setConn('переподключение…', 'warn');
+    log('Разрыв, реконнект…', 'warn');
+    let n = 0;
+    function retry() {
+      if (!peer || peer.destroyed) return;
+      if (peer.open) { setConn('онлайн', 'on'); return; }
+      if (n++ >= 5) { toast('Разрыв — обнови страницу', 'err'); setConn('разрыв', 'warn'); return; }
+      try { peer.reconnect(); } catch(e) {}
+      setTimeout(() => { if (peer && !peer.open) retry(); }, 2000*n);
     }
-    setTimeout(retry,1000);
+    setTimeout(retry, 1000);
   });
-  myPeer.on('error',err=>{
-    log('Peer err ['+err.type+']: '+err.message,'error');
-    if(err.type==='unavailable-id') toast('ID занят, попробуй снова','error');
-    else if(err.type==='peer-unavailable') toast('Комната не найдена','error');
-    else if(err.type==='network'||err.type==='server-error') toast('Сетевая ошибка…','warn');
+
+  peer.on('error', err => {
+    log('Peer ['+err.type+']: '+err.message, 'err');
+    if (err.type === 'unavailable-id')   toast('ID занят, попробуй снова', 'err');
+    if (err.type === 'peer-unavailable') toast('Комната не найдена', 'err');
+    if (err.type === 'network' || err.type === 'server-error') toast('Сетевая ошибка…', 'warn');
   });
 }
 
-// ════════════════════════════════════════════════════════
-//  PEER FACTORY
-// ════════════════════════════════════════════════════════
-function tryBroker(id, cfg){
-  return new Promise((res, rej)=>{
-    const opts = {debug:0, config:{iceServers:ICE}};
-    if(cfg){
-      opts.host   = cfg.host;
-      opts.port   = cfg.port;
-      opts.path   = cfg.path;
-      opts.secure = cfg.secure;
-    }
-    let done = false;
-    const peer = new Peer(id, opts);
-    const t = setTimeout(()=>{
-      if(done) return; done=true;
-      try{peer.destroy();}catch(e){}
-      rej(new Error('Timeout'));
-    }, 10000);
-    peer.on('open', pid=>{
-      if(done) return; done=true;
-      clearTimeout(t); res({peer, pid});
+// ═══════════════════════════════════════════════════════════════
+//  PEER FACTORY  (tries default SDK broker — most reliable)
+// ═══════════════════════════════════════════════════════════════
+function makePeer(id) {
+  return new Promise((res, rej) => {
+    // Use PeerJS defaults — SDK auto-selects the best broker
+    const p = new Peer(id, {
+      debug: 0,
+      config: { iceServers: ICE_SERVERS }
     });
-    peer.on('error', e=>{
-      if(done) return; done=true;
+    let done = false;
+    const t = setTimeout(() => {
+      if (done) return; done = true;
+      try { p.destroy(); } catch(e) {}
+      rej(new Error('Timeout — сервер недоступен'));
+    }, 12000);
+    p.on('open', pid => {
+      if (done) return; done = true;
+      clearTimeout(t); res({ p, pid });
+    });
+    p.on('error', e => {
+      if (done) return; done = true;
       clearTimeout(t);
-      try{peer.destroy();}catch(ex){}
+      try { p.destroy(); } catch(ex) {}
       rej(e);
     });
   });
 }
 
-async function makePeer(id){
-  let lastErr;
-  for(let i=0; i<BROKERS.length; i++){
-    const b = BROKERS[i];
-    const label = b ? b.host : 'peerjs-default';
-    setConn('брокер '+(i+1)+'/'+BROKERS.length+'…', '');
-    log('Пробуем брокер: '+label, 'info');
-    try{
-      const r = await tryBroker(id, b);
-      log('Подключён через: '+label, 'success');
-      return r;
-    } catch(e){
-      log('Брокер '+label+' недоступен: '+e.message, 'warn');
-      lastErr = e;
-    }
-  }
-  throw lastErr || new Error('Все брокеры недоступны');
-}
-
-async function getMic(){
+async function getMic() {
   return navigator.mediaDevices.getUserMedia({
-    audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false
+    audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true },
+    video: false
   });
 }
 
-// ════════════════════════════════════════════════════════
-//  CREATE ROOM  (become host)
-// ════════════════════════════════════════════════════════
-async function createRoom(){
-  const nick=$('createNick').value.trim();
-  if(!nick){toast('Введи ник!','error');return;}
-  myAvatar=$('createAvatar').value.trim();
-  setBtn('createBtn',true); setConn('микрофон…');
-  try{myStream=await getMic();}
-  catch(e){toast('Нет доступа к микрофону','error');log('Mic: '+e.message,'error');setBtn('createBtn',false);return;}
-  myNick=nick; roomId=genRoomId(); amHost=true;
-  setConn('подключение…');
-  try{
-    const {peer,pid}=await makePeer('voxroom-'+roomId);
-    myPeer=peer; myId=pid;
-    userList[myId]={nick:myNick, muted:false, avatar:myAvatar};
-    setupPeer();
-    initAudioCtx();
-    setConn('онлайн','online');
-    log('Комната создана: '+roomId,'success');
-    try{await navigator.clipboard.writeText(roomId);toast('ID скопирован: '+roomId,'success');}
-    catch(e){toast('ID: '+roomId,'info');}
-    watchSpeaking(myStream,myId);
-    enterUI();
-  }catch(e){setConn('ошибка','warn');toast('Ошибка: '+e.message,'error');log(''+e.message,'error');}
-  setBtn('createBtn',false);
+function genId() {
+  const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:8}, ()=>c[Math.floor(Math.random()*c.length)]).join('');
 }
 
-// ════════════════════════════════════════════════════════
-//  JOIN ROOM  (become participant)
-// ════════════════════════════════════════════════════════
-async function joinRoom(){
-  const nick=$('joinNick').value.trim();
-  const rid=$('joinRoomId').value.trim().toUpperCase().replace(/\s/g,'');
-  if(!nick){toast('Введи ник!','error');return;}
-  if(!rid){toast('Введи ID комнаты!','error');return;}
-  myAvatar=$('joinAvatar').value.trim();
-  setBtn('joinBtn',true); setConn('микрофон…');
-  try{myStream=await getMic();}
-  catch(e){toast('Нет доступа к микрофону','error');log('Mic: '+e.message,'error');setBtn('joinBtn',false);return;}
-  myNick=nick; roomId=rid; amHost=false;
+// ═══════════════════════════════════════════════════════════════
+//  CREATE ROOM
+// ═══════════════════════════════════════════════════════════════
+async function createRoom() {
+  const nick = G('cNick').value.trim();
+  if (!nick) { toast('Введи ник!', 'err'); return; }
+  myNick   = nick;
+  myAvatar = G('cAvatar').value.trim();
+  setBtn('cBtn', true);
+  setConn('микрофон…');
+
+  try { myStream = await getMic(); }
+  catch(e) { toast('Нет доступа к микрофону', 'err'); log('Mic: '+e.message, 'err'); setBtn('cBtn', false); return; }
+
+  roomId  = genId();
+  amHost  = true;
   setConn('подключение…');
-  const suffix=Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  try{
-    const {peer,pid}=await makePeer('voxroom-'+rid+'-'+suffix);
-    myPeer=peer; myId=pid;
-    userList[myId]={nick:myNick, muted:false, avatar:myAvatar};
+
+  try {
+    const {p, pid} = await makePeer('voxroom-'+roomId);
+    peer = p; myId = pid;
+    users[myId] = { nick:myNick, avatar:myAvatar, muted:false };
     setupPeer();
-    setConn('онлайн','online');
+    initCtx();
+    setConn('онлайн', 'on');
+    log('Комната создана: '+roomId, 'ok');
+    try { await navigator.clipboard.writeText(roomId); toast('ID скопирован: '+roomId, 'ok'); }
+    catch(e) { toast('ID: '+roomId, 'info'); }
+    watchSpeak(myStream, myId);
+    enterUI();
+  } catch(e) {
+    setConn('ошибка', 'warn');
+    toast('Ошибка подключения: '+e.message, 'err');
+    log(''+e.message, 'err');
+  }
+  setBtn('cBtn', false);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  JOIN ROOM
+// ═══════════════════════════════════════════════════════════════
+async function joinRoom() {
+  const nick = G('jNick').value.trim();
+  const rid  = G('jRoom').value.trim().toUpperCase().replace(/\s/g,'');
+  if (!nick) { toast('Введи ник!', 'err'); return; }
+  if (!rid)  { toast('Введи ID комнаты!', 'err'); return; }
+  myNick   = nick;
+  myAvatar = G('jAvatar').value.trim();
+  setBtn('jBtn', true);
+  setConn('микрофон…');
+
+  try { myStream = await getMic(); }
+  catch(e) { toast('Нет доступа к микрофону', 'err'); log('Mic: '+e.message, 'err'); setBtn('jBtn', false); return; }
+
+  roomId = rid;
+  amHost = false;
+  setConn('подключение…');
+
+  const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  try {
+    const {p, pid} = await makePeer('voxroom-'+rid+'-'+suffix);
+    peer = p; myId = pid;
+    users[myId] = { nick:myNick, avatar:myAvatar, muted:false };
+    setupPeer();
+    setConn('онлайн', 'on');
     clientConnect('voxroom-'+rid);
-    watchSpeaking(myStream,myId);
+    watchSpeak(myStream, myId);
     enterUI();
-  }catch(e){setConn('ошибка','warn');toast('Ошибка: '+e.message,'error');log(''+e.message,'error');}
-  setBtn('joinBtn',false);
+  } catch(e) {
+    setConn('ошибка', 'warn');
+    toast('Ошибка: '+e.message, 'err');
+    log(''+e.message, 'err');
+  }
+  setBtn('jBtn', false);
 }
 
-// ════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 //  UI
-// ════════════════════════════════════════════════════════
-function enterUI(){
-  $('roomTitle').textContent='Комната '+roomId;
-  $('roomIdDisplay').textContent=roomId;
-  const _nd=$('myNickDisplay');
-  if(myAvatar){
-    _nd.innerHTML='<img src="'+myAvatar+'" style="width:20px;height:20px;border-radius:5px;vertical-align:middle;margin-right:5px;object-fit:cover;" onerror="this.remove()"> '+(amHost?'👑 ':'🎙 ')+myNick;
+// ═══════════════════════════════════════════════════════════════
+function enterUI() {
+  G('rTitle').textContent = 'Комната '+roomId;
+  G('rId').textContent    = roomId;
+  const lbl = G('myLabel');
+  if (myAvatar) {
+    lbl.innerHTML = `<img src="${myAvatar}" style="width:19px;height:19px;border-radius:5px;vertical-align:middle;margin-right:5px;object-fit:cover;" onerror="this.remove()">` + (amHost?'👑 ':'🎙 ') + myNick;
   } else {
-    _nd.textContent=(amHost?'👑 ':'🎙 ')+myNick;
+    lbl.textContent = (amHost?'👑 ':'🎙 ') + myNick;
   }
-  renderUsers(); showScreen('roomScreen');
+  renderUsers();
+  showScreen('roomScreen');
 }
 
-function cleanup(){
-  if(amHost){
-    broadcastHost({type:'host_leaving'});
-    for(const pid of Object.keys(participants)) hostRemoveParticipant(pid);
-    if(audioCtx){try{audioCtx.close();}catch(e){} audioCtx=null; masterDest=null;}
+function doCleanup() {
+  if (amHost) {
+    bcastHost({ type:'host_leaving' });
+    for (const pid of Object.keys(parts)) hostRemove(pid);
+    try { audioCtx?.close(); } catch(e) {}
+    audioCtx = null; masterDest = null;
   } else {
-    if(hostDataConn&&hostDataConn.open) try{hostDataConn.send({type:'leave'});}catch(e){}
-    if(hostCall) try{hostCall.close();}catch(e){}
-    if(clientAudioEl){clientAudioEl.srcObject=null; clientAudioEl=null;}
-    hostDataConn=null; hostCall=null;
+    if (hostConn?.open) try { hostConn.send({ type:'leave' }); } catch(e) {}
+    try { hostCall?.close(); } catch(e) {}
+    if (clientAudio) { clientAudio.srcObject=null; clientAudio=null; }
+    hostConn = null; hostCall = null;
   }
-  if(myStream){myStream.getTracks().forEach(t=>t.stop());myStream=null;}
-  if(myPeer){try{myPeer.destroy();}catch(e){} myPeer=null;}
-  for(const k of Object.keys(userList)) delete userList[k];
-  for(const k of Object.keys(participants)) delete participants[k];
-  for(const k of Object.keys(outCalls)) delete outCalls[k];
+  if (myStream) { myStream.getTracks().forEach(t=>t.stop()); myStream=null; }
+  try { peer?.destroy(); } catch(e) {}
+  peer = null;
+  for (const k of Object.keys(users)) delete users[k];
+  for (const k of Object.keys(parts)) delete parts[k];
+  for (const k of Object.keys(outCalls)) delete outCalls[k];
   myId=null; roomId=null; amHost=false; isMuted=false; isDeaf=false;
 }
 
-function leaveRoom(){
-  cleanup();
-  $('muteBtn').textContent='🎙'; $('muteBtn').className='ctrl-btn';
-  $('deafBtn').textContent='🔊'; $('deafBtn').className='ctrl-btn';
-  $('logEntries').innerHTML='';
-  const _cm=document.getElementById('chatMessages'); if(_cm) _cm.innerHTML='';
-  setConn('не подключён'); showScreen('lobbyScreen');
+function leaveRoom() {
+  doCleanup();
+  G('muteBtn').textContent='🎙'; G('muteBtn').className='ctrl-btn';
+  G('deafBtn').textContent='🔊'; G('deafBtn').className='ctrl-btn';
+  G('logBox').innerHTML='';
+  G('chatBox').innerHTML='';
+  setConn('не подключён');
+  showScreen('lobbyScreen');
 }
 
-function toggleMute(){
-  isMuted=!isMuted;
-  if(myStream) myStream.getAudioTracks().forEach(t=>t.enabled=!isMuted);
-  const b=$('muteBtn'); b.textContent=isMuted?'🔇':'🎙'; b.className='ctrl-btn'+(isMuted?' muted-ctrl':'');
-  if(userList[myId]) userList[myId].muted=isMuted;
+function toggleMute() {
+  isMuted = !isMuted;
+  if (myStream) myStream.getAudioTracks().forEach(t=>t.enabled=!isMuted);
+  const b = G('muteBtn');
+  b.textContent = isMuted ? '🔇' : '🎙';
+  b.className   = 'ctrl-btn' + (isMuted ? ' muted' : '');
+  if (users[myId]) users[myId].muted = isMuted;
   renderUsers();
-  if(!amHost && hostDataConn&&hostDataConn.open) hostDataConn.send({type:'mute',muted:isMuted});
-  if(amHost) broadcastHost({type:'user_mute',id:myId,muted:isMuted});
-  log(isMuted?'Микрофон выключен':'Микрофон включён',isMuted?'warn':'success');
+  if (!amHost && hostConn?.open) hostConn.send({ type:'mute', muted:isMuted });
+  if (amHost) bcastHost({ type:'user_mute', id:myId, muted:isMuted });
+  log(isMuted ? 'Микрофон выкл.' : 'Микрофон вкл.', isMuted?'warn':'ok');
 }
-function toggleDeaf(){
-  isDeaf=!isDeaf;
-  if(clientAudioEl) clientAudioEl.volume=isDeaf?0:volume;
-  const b=$('deafBtn'); b.textContent=isDeaf?'🔈':'🔊'; b.className='ctrl-btn'+(isDeaf?' muted-ctrl':'');
-  if(isDeaf&&!isMuted) toggleMute();
+
+function toggleDeaf() {
+  isDeaf = !isDeaf;
+  if (clientAudio) clientAudio.volume = isDeaf ? 0 : vol;
+  const b = G('deafBtn');
+  b.textContent = isDeaf ? '🔈' : '🔊';
+  b.className   = 'ctrl-btn' + (isDeaf ? ' muted' : '');
+  if (isDeaf && !isMuted) toggleMute();
 }
-function setVolume(val){
-  volume=val/100;
-  if(!isDeaf&&clientAudioEl) clientAudioEl.volume=volume;
+
+function setVol(v) {
+  vol = v/100;
+  if (!isDeaf && clientAudio) clientAudio.volume = vol;
 }
-async function copyRoomId(){
-  try{await navigator.clipboard.writeText(roomId);toast('ID скопирован!','success');}
-  catch(e){toast(roomId,'info');}
+
+async function copyId() {
+  try { await navigator.clipboard.writeText(roomId); toast('ID скопирован!', 'ok'); }
+  catch(e) { toast(roomId, 'info'); }
 }
-function genRoomId(){
-  const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({length:8},()=>c[Math.floor(Math.random()*c.length)]).join('');
-}
-document.addEventListener('keydown',e=>{
-  if($('roomScreen').classList.contains('active')&&e.code==='KeyM'&&!e.target.matches('input')) toggleMute();
+
+// Keyboard shortcut
+document.addEventListener('keydown', e => {
+  if (G('roomScreen').classList.contains('active') && e.code==='KeyM' && !e.target.matches('input'))
+    toggleMute();
 });
-window.addEventListener('load',()=>{
-  const rid=new URLSearchParams(location.search).get('room');
-  if(rid){$('joinRoomId').value=rid.toUpperCase();toast('ID вставлен — введи ник','info');}
+
+// URL param
+window.addEventListener('load', () => {
+  const rid = new URLSearchParams(location.search).get('room');
+  if (rid) { G('jRoom').value=rid.toUpperCase(); toast('ID вставлен — введи ник','info'); }
 });
 </script>
 </body>
