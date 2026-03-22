@@ -273,7 +273,7 @@ const BROKERS = [
 ];
 
 // ── State ────────────────────────────────────────────────
-let myPeer=null, myStream=null, myId=null, myNick='', roomId=null;
+let myPeer=null, myStream=null, myId=null, myNick='', myAvatar='', roomId=null;
 let amHost=false;
 let isMuted=false, isDeaf=false, volume=1.0;
 
@@ -309,6 +309,39 @@ function setBtn(id,dis){const b=$(id);if(b)b.disabled=dis;}
 const AVC=[['#00ff88','#003322'],['#00ccff','#002233'],['#ff6688','#330011'],['#ffaa00','#332200'],['#aa88ff','#220033'],['#44ddaa','#001122']];
 function avatarColor(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))&0xffff;return AVC[h%AVC.length];}
 function ini(n){return n.substring(0,2).toUpperCase();}
+
+// ── Chat ──────────────────────────────────────────────────
+function nowHH(){const d=new Date();return[d.getHours(),d.getMinutes()].map(n=>String(n).padStart(2,'0')).join(':');}
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function appendChatMsg(id,nick,avatar,text,isSystem){
+  const box=document.getElementById('chatMessages');
+  if(!box) return;
+  if(isSystem){
+    const d=document.createElement('div');
+    d.className='chat-sys'; d.textContent=text;
+    box.appendChild(d); box.scrollTop=box.scrollHeight; return;
+  }
+  const isMe=(id===myId);
+  const [bg,fg]=avatarColor(nick);
+  const avHTML=avatar
+    ? '<div class="chat-msg-avatar"><img src="'+avatar+'" onerror="this.style.display=\'none\'" loading="lazy"></div>'
+    : '<div class="chat-msg-avatar" style="background:'+bg+';color:'+fg+'">'+ini(nick)+'</div>';
+  const d=document.createElement('div');
+  d.className='chat-msg'+(isMe?' mine':'');
+  d.innerHTML=avHTML+'<div class="chat-msg-body"><div class="chat-msg-name">'+escH(nick)+'</div><div class="chat-msg-text">'+escH(text)+'</div><div class="chat-msg-time">'+nowHH()+'</div></div>';
+  box.appendChild(d); box.scrollTop=box.scrollHeight;
+}
+
+function sendChat(){
+  const inp=document.getElementById('chatInput');
+  if(!inp) return;
+  const text=inp.value.trim(); if(!text) return; inp.value='';
+  const msg={type:'chat',id:myId,nick:myNick,avatar:myAvatar,text};
+  appendChatMsg(myId,myNick,myAvatar,text,false);
+  if(amHost) broadcastHost(msg);
+  else if(hostDataConn&&hostDataConn.open) hostDataConn.send(msg);
+}
 
 // ── Render users ─────────────────────────────────────────
 const speakT={};
@@ -446,16 +479,14 @@ function hostHandleDataConn(conn){
   conn.on('data',msg=>{
     if(!msg||!msg.type) return;
     if(msg.type==='join'){
-      const nick=msg.nick;
+      const nick=msg.nick; const avatar=msg.avatar||'';
       log(nick+' подключается…','info');
-      // Send them the current user list
-      const ul=Object.entries(userList).map(([id,u])=>({id,nick:u.nick,muted:u.muted}));
-      conn.send({type:'welcome', users:ul, hostNick:myNick, hostId:myId});
-      // Add to participants and userList
-      participants[pid]={nick, dataConn:conn, sourceNode:null, gainNode:null, stream:null};
-      userList[pid]={nick, muted:false};
-      // Notify everyone else
-      broadcastHost({type:'user_joined', id:pid, nick});
+      const ul=Object.entries(userList).map(([id,u])=>({id,nick:u.nick,muted:u.muted,avatar:u.avatar||''}));
+      conn.send({type:'welcome', users:ul, hostNick:myNick, hostId:myId, hostAvatar:myAvatar});
+      participants[pid]={nick, avatar, dataConn:conn, sourceNode:null, gainNode:null, stream:null};
+      userList[pid]={nick, avatar, muted:false};
+      broadcastHost({type:'user_joined', id:pid, nick, avatar});
+      appendChatMsg(pid, nick, avatar, nick+' вошёл в комнату', true);
       toast(nick+' вошёл','success');
       log(nick+' вошёл','success');
       renderUsers();
@@ -465,6 +496,12 @@ function hostHandleDataConn(conn){
       if(participants[pid]) participants[pid].muted=msg.muted;
       broadcastHost({type:'user_mute', id:pid, muted:msg.muted});
       renderUsers();
+    }
+    if(msg.type==='chat'){
+      // relay to all other participants
+      for(const [eid,ep] of Object.entries(participants))
+        if(eid!==pid&&ep.dataConn&&ep.dataConn.open) try{ep.dataConn.send(msg);}catch(e){}
+      appendChatMsg(msg.id||pid, msg.nick, msg.avatar||'', msg.text, false);
     }
     if(msg.type==='leave'){
       hostRemoveParticipant(pid);
@@ -523,26 +560,27 @@ function clientConnect(hostId){
   hostDataConn=conn;
   conn.on('open',()=>{
     log('Data-канал открыт','info');
-    conn.send({type:'join', nick:myNick});
+    conn.send({type:'join', nick:myNick, avatar:myAvatar});
   });
   conn.on('data',msg=>{
     if(!msg||!msg.type) return;
     if(msg.type==='welcome'){
-      // Got list of all current users
-      for(const u of msg.users) userList[u.id]={nick:u.nick, muted:u.muted};
-      userList[msg.hostId]={nick:msg.hostNick, muted:false};
+      for(const u of msg.users) userList[u.id]={nick:u.nick, muted:u.muted, avatar:u.avatar||''};
+      userList[msg.hostId]={nick:msg.hostNick, muted:false, avatar:msg.hostAvatar||''};
       userList[myId]={nick:myNick, muted:isMuted, avatar:myAvatar};
       renderUsers();
       toast('Подключён к комнате!','success');
       log('В комнате: '+Object.keys(userList).length+' чел.','success');
     }
     if(msg.type==='user_joined'){
-      userList[msg.id]={nick:msg.nick, muted:false};
+      userList[msg.id]={nick:msg.nick, muted:false, avatar:msg.avatar||''};
+      appendChatMsg(msg.id, msg.nick, msg.avatar||'', msg.nick+' вошёл в комнату', true);
       toast(msg.nick+' вошёл','success');
       log(msg.nick+' вошёл','success');
       renderUsers();
     }
     if(msg.type==='user_left'){
+      appendChatMsg(msg.id, msg.nick, '', msg.nick+' покинул комнату', true);
       delete userList[msg.id];
       toast(msg.nick+' вышел','warn');
       log(msg.nick+' вышел','warn');
@@ -551,6 +589,9 @@ function clientConnect(hostId){
     if(msg.type==='user_mute'){
       if(userList[msg.id]) userList[msg.id].muted=msg.muted;
       renderUsers();
+    }
+    if(msg.type==='chat'){
+      appendChatMsg(msg.id||'?', msg.nick, msg.avatar||'', msg.text, false);
     }
   });
   conn.on('close',()=>{toast('Соединение с хостом потеряно','error');log('Хост отключился','error');});
@@ -642,6 +683,7 @@ async function getMic(){
 async function createRoom(){
   const nick=$('createNick').value.trim();
   if(!nick){toast('Введи ник!','error');return;}
+  myAvatar=$('createAvatar').value.trim();
   setBtn('createBtn',true); setConn('микрофон…');
   try{myStream=await getMic();}
   catch(e){toast('Нет доступа к микрофону','error');log('Mic: '+e.message,'error');setBtn('createBtn',false);return;}
@@ -671,6 +713,7 @@ async function joinRoom(){
   const rid=$('joinRoomId').value.trim().toUpperCase().replace(/\s/g,'');
   if(!nick){toast('Введи ник!','error');return;}
   if(!rid){toast('Введи ID комнаты!','error');return;}
+  myAvatar=$('joinAvatar').value.trim();
   setBtn('joinBtn',true); setConn('микрофон…');
   try{myStream=await getMic();}
   catch(e){toast('Нет доступа к микрофону','error');log('Mic: '+e.message,'error');setBtn('joinBtn',false);return;}
@@ -696,7 +739,12 @@ async function joinRoom(){
 function enterUI(){
   $('roomTitle').textContent='Комната '+roomId;
   $('roomIdDisplay').textContent=roomId;
-  $('myNickDisplay').textContent=(amHost?'👑 ':'🎙 ')+myNick;
+  const _nd=$('myNickDisplay');
+  if(myAvatar){
+    _nd.innerHTML='<img src="'+myAvatar+'" style="width:20px;height:20px;border-radius:5px;vertical-align:middle;margin-right:5px;object-fit:cover;" onerror="this.remove()"> '+(amHost?'👑 ':'🎙 ')+myNick;
+  } else {
+    _nd.textContent=(amHost?'👑 ':'🎙 ')+myNick;
+  }
   renderUsers(); showScreen('roomScreen');
 }
 
@@ -724,6 +772,7 @@ function leaveRoom(){
   $('muteBtn').textContent='🎙'; $('muteBtn').className='ctrl-btn';
   $('deafBtn').textContent='🔊'; $('deafBtn').className='ctrl-btn';
   $('logEntries').innerHTML='';
+  const _cm=document.getElementById('chatMessages'); if(_cm) _cm.innerHTML='';
   setConn('не подключён'); showScreen('lobbyScreen');
 }
 
