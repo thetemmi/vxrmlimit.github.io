@@ -261,14 +261,21 @@
 const ICE = [
   {urls:'stun:stun.l.google.com:19302'},
   {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'stun:stun2.l.google.com:19302'},
+  {urls:'stun:stun3.l.google.com:19302'},
   {urls:'stun:stun.cloudflare.com:3478'},
   {urls:'turn:global.relay.metered.ca:80',               username:'openrelayproject',credential:'openrelayproject'},
   {urls:'turn:global.relay.metered.ca:443',              username:'openrelayproject',credential:'openrelayproject'},
   {urls:'turn:global.relay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
 ];
 
+// Multiple signalling brokers — tried in order until one works
 const BROKERS = [
+  // broker.peerjs.com — official stable endpoint
+  {host:'broker.peerjs.com', port:443, path:'/', secure:true},
+  // 0.peerjs.com fallback
   {host:'0.peerjs.com', port:443, path:'/', secure:true},
+  // null = PeerJS SDK picks its own default
   null
 ];
 
@@ -676,26 +683,52 @@ function setupPeer(){
 // ════════════════════════════════════════════════════════
 //  PEER FACTORY
 // ════════════════════════════════════════════════════════
-function tryBroker(id,cfg){
-  return new Promise((res,rej)=>{
-    let opts={debug:0,config:{iceServers:ICE}};
-    if(cfg) opts=Object.assign({},opts,cfg);
-    const peer=new Peer(id,opts);
-    const t=setTimeout(()=>{try{peer.destroy();}catch(e){}rej(new Error('Timeout'));},9000);
-    peer.on('open',pid=>{clearTimeout(t);res({peer,pid});});
-    peer.on('error',e=>{clearTimeout(t);try{peer.destroy();}catch(ex){}rej(e);});
+function tryBroker(id, cfg){
+  return new Promise((res, rej)=>{
+    const opts = {debug:0, config:{iceServers:ICE}};
+    if(cfg){
+      opts.host   = cfg.host;
+      opts.port   = cfg.port;
+      opts.path   = cfg.path;
+      opts.secure = cfg.secure;
+    }
+    let done = false;
+    const peer = new Peer(id, opts);
+    const t = setTimeout(()=>{
+      if(done) return; done=true;
+      try{peer.destroy();}catch(e){}
+      rej(new Error('Timeout'));
+    }, 10000);
+    peer.on('open', pid=>{
+      if(done) return; done=true;
+      clearTimeout(t); res({peer, pid});
+    });
+    peer.on('error', e=>{
+      if(done) return; done=true;
+      clearTimeout(t);
+      try{peer.destroy();}catch(ex){}
+      rej(e);
+    });
   });
 }
+
 async function makePeer(id){
   let lastErr;
-  for(let i=0;i<BROKERS.length;i++){
-    const b=BROKERS[i];
-    const label=b?b.host:'default';
-    log('Брокер '+(i+1)+': '+label+'…','info');
-    try{const r=await tryBroker(id,b);log('OK: '+label,'success');return r;}
-    catch(e){log('Недоступен: '+label,'warn');lastErr=e;}
+  for(let i=0; i<BROKERS.length; i++){
+    const b = BROKERS[i];
+    const label = b ? b.host : 'peerjs-default';
+    setConn('брокер '+(i+1)+'/'+BROKERS.length+'…', '');
+    log('Пробуем брокер: '+label, 'info');
+    try{
+      const r = await tryBroker(id, b);
+      log('Подключён через: '+label, 'success');
+      return r;
+    } catch(e){
+      log('Брокер '+label+' недоступен: '+e.message, 'warn');
+      lastErr = e;
+    }
   }
-  throw lastErr||new Error('Все брокеры недоступны');
+  throw lastErr || new Error('Все брокеры недоступны');
 }
 
 async function getMic(){
