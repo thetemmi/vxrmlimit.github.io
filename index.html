@@ -163,7 +163,6 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     </div>
   </header>
 
-  <!-- LOBBY -->
   <div id="lobbyScreen" class="screen active">
     <div class="lobby">
       <div class="lobby-title">Голосовой чат<br><span>без регистрации</span></div>
@@ -191,7 +190,6 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     </div>
   </div>
 
-  <!-- ROOM -->
   <div id="roomScreen" class="screen">
     <div class="room-hdr">
       <div>
@@ -205,14 +203,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     </div>
 
     <div class="room-body">
-      <!-- sidebar -->
       <div class="sidebar">
         <div class="sidebar-title">Каналы</div>
         <div class="ch-item active"><span class="ch-icon">🔊</span><span class="ch-name">Основной</span><span class="ch-cnt" id="chCnt">0</span></div>
         <div class="ch-item" style="opacity:.35"><span class="ch-icon">🔇</span><span class="ch-name">AFK</span></div>
       </div>
 
-      <!-- users -->
       <div class="users-panel">
         <div class="users-title">Участники <span class="users-cnt" id="uCnt">0</span></div>
         <div class="users-list" id="uList">
@@ -220,7 +216,6 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
         </div>
       </div>
 
-      <!-- chat -->
       <div class="chat-panel">
         <div class="chat-title">💬 Чат</div>
         <div class="chat-msgs" id="chatBox"></div>
@@ -275,8 +270,8 @@ const ICE_SERVERS = [
 // ═══════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════
-let peer = null;        // PeerJS instance
-let myStream = null;    // local mic stream
+let peer = null;        
+let myStream = null;    
 let myId = null;
 let myNick = '';
 let myAvatar = '';
@@ -287,18 +282,19 @@ let isDeaf = false;
 let vol = 1.0;
 
 // Host state
-const parts = {};       // pid → {nick, avatar, dataConn, srcNode, gainNode, stream}
-const outCalls = {};    // pid → outgoing MediaConnection (host→participant)
+const parts = {};       
+const outCalls = {};    
 let audioCtx = null;
 let masterDest = null;
+let hostMicGain = null;
 
 // Client state
-let hostConn = null;    // DataConnection to host
-let hostCall = null;    // incoming MediaConnection from host (mixed audio)
-let clientAudio = null; // <audio> element
+let hostConn = null;    
+let hostCall = null;    
+let clientAudio = null; 
 
 // Shared display state
-const users = {};       // pid → {nick, avatar, muted}
+const users = {};       
 
 // ═══════════════════════════════════════════════════════════════
 //  UI HELPERS
@@ -355,7 +351,7 @@ function avaHTML(nick, avatar, size=32) {
   if (avatar) {
     return `<div class="ava" style="width:${size}px;height:${size}px;"><img src="${avatar}" onerror="this.parentNode.innerHTML='${ini(nick)}';this.parentNode.style.background='${bg}';this.parentNode.style.color='${fg}';"></div>`;
   }
-  return `<div class="ava" style="width:${size}px;height:${size}px;background:${bg};color:${fg};">${ini(nick)}</div>`;
+  return `<div class="ava" style="width:${size}px;height:${size}px;background:${bg};color:${fg}">${ini(nick)}</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -413,7 +409,6 @@ function renderUsers() {
   const list = G('uList');
   const entries = Object.entries(users);
 
-  // Remove stale
   list.querySelectorAll('.u-item').forEach(el => {
     if (!users[el.dataset.pid]) el.remove();
   });
@@ -473,13 +468,16 @@ function watchSpeak(stream, pid) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  HOST — AUDIO MIXER
+//  HOST — AUDIO MIXER (FIXED)
 // ═══════════════════════════════════════════════════════════════
 function initCtx() {
-  if (audioCtx) return;
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return;
+  }
   audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   masterDest = audioCtx.createMediaStreamDestination();
-  // Connect host's own mic once into a persistent gain node
+  
   if (myStream) {
     hostMicGain = audioCtx.createGain();
     hostMicGain.gain.value = 1.0;
@@ -488,14 +486,9 @@ function initCtx() {
   }
 }
 
-// hostMicGain: persistent gain node for host's mic, connected once
-let hostMicGain = null;
-
 function buildMixFor(excludePid) {
   const dest = audioCtx.createMediaStreamDestination();
-  // Host's own mic
   if (hostMicGain) hostMicGain.connect(dest);
-  // All participants except excludePid
   for (const [pid, p] of Object.entries(parts)) {
     if (pid === excludePid) continue;
     if (p.gainNode) p.gainNode.connect(dest);
@@ -525,8 +518,12 @@ function hostAddStream(pid, stream) {
   try { parts[pid].gainNode?.disconnect(); } catch(e) {}
 
   const src  = audioCtx.createMediaStreamSource(stream);
-  const gain = audioCtx.createGain(); gain.gain.value = 1.0;
+  const gain = audioCtx.createGain(); 
+  gain.gain.value = 1.0;
+  
   src.connect(gain);
+  // FIX: Подключаем к выходу хоста, чтобы он слышал других
+  gain.connect(audioCtx.destination); 
 
   parts[pid].srcNode  = src;
   parts[pid].gainNode = gain;
@@ -550,17 +547,14 @@ function hostOnData(conn) {
       const avatar = msg.avatar || '';
       log(nick + ' подключается…', 'info');
 
-      // Register
       parts[pid] = { nick, avatar, dataConn:conn, srcNode:null, gainNode:null, stream:null };
       users[pid] = { nick, avatar, muted:false };
 
-      // Send welcome: full current user list
       const ul = Object.entries(users)
         .filter(([id]) => id !== pid)
         .map(([id, u]) => ({id, nick:u.nick, avatar:u.avatar||'', muted:u.muted}));
       conn.send({ type:'welcome', users:ul, hostId:myId, hostNick:myNick, hostAvatar:myAvatar });
 
-      // Notify everyone else about newcomer
       bcastHost({ type:'user_joined', id:pid, nick, avatar });
       appendMsg(pid, nick, avatar, nick+' вошёл в комнату', true);
 
@@ -577,7 +571,6 @@ function hostOnData(conn) {
     }
 
     if (msg.type === 'chat') {
-      // Relay to everyone else
       for (const [eid, ep] of Object.entries(parts))
         if (eid !== pid && ep.dataConn?.open)
           try { ep.dataConn.send(msg); } catch(e) {}
@@ -593,7 +586,6 @@ function hostOnData(conn) {
 function hostOnCall(call) {
   const pid = call.peer;
   initCtx();
-  // Answer immediately with this participant's mix
   const mix = buildMixFor(pid);
   call.answer(mix);
   outCalls[pid] = call;
@@ -602,7 +594,6 @@ function hostOnCall(call) {
     if (parts[pid]) {
       hostAddStream(pid, stream);
     } else {
-      // Data channel join might arrive slightly later
       let tries = 0;
       const wait = () => {
         if (parts[pid]) hostAddStream(pid, stream);
@@ -643,8 +634,6 @@ function bcastHost(msg) {
 // ═══════════════════════════════════════════════════════════════
 function clientConnect(hostId) {
   log('Коннектимся к хосту…', 'info');
-
-  // 1. Data channel
   const conn = peer.connect(hostId, { reliable:true });
   hostConn = conn;
 
@@ -657,7 +646,6 @@ function clientConnect(hostId) {
     if (!msg || !msg.type) return;
 
     if (msg.type === 'welcome') {
-      // Populate users list
       for (const u of msg.users)
         users[u.id] = { nick:u.nick, avatar:u.avatar||'', muted:u.muted };
       users[msg.hostId] = { nick:msg.hostNick, avatar:msg.hostAvatar||'', muted:false };
@@ -696,7 +684,6 @@ function clientConnect(hostId) {
   conn.on('close', () => { toast('Соединение с хостом потеряно', 'err'); log('Хост отключился', 'err'); });
   conn.on('error', e => { toast('Ошибка: '+e.message, 'err'); log('Err: '+e.message, 'err'); });
 
-  // 2. Audio call to host — send our mic, receive mixed stream
   setTimeout(() => {
     log('Звоним хосту…', 'info');
     const call = peer.call(hostId, myStream, { config:{iceServers:ICE_SERVERS} });
@@ -714,12 +701,10 @@ function clientConnect(hostId) {
       clientAudio.volume = isDeaf ? 0 : vol;
       clientAudio.play().then(() => {
         log('Аудио воспроизводится', 'ok');
-        // Remove unlock button if present
         const ub = document.getElementById('unlockBtn');
         if (ub) ub.remove();
       }).catch(err => {
         log('Autoplay заблокирован — нажми кнопку звука', 'warn');
-        // Show unlock button
         let ub = document.getElementById('unlockBtn');
         if (!ub) {
           ub = document.createElement('button');
@@ -745,7 +730,6 @@ function setupPeer() {
   if (amHost) {
     peer.on('connection', conn => {
       const pid = conn.peer;
-      // Pre-register slot so hostOnCall can find it
       if (!parts[pid]) parts[pid] = { nick:null, avatar:'', dataConn:null, srcNode:null, gainNode:null, stream:null };
       parts[pid].dataConn = conn;
       conn.on('open', () => hostOnData(conn));
@@ -775,12 +759,8 @@ function setupPeer() {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  PEER FACTORY  (tries default SDK broker — most reliable)
-// ═══════════════════════════════════════════════════════════════
 function makePeer(id) {
   return new Promise((res, rej) => {
-    // Use PeerJS defaults — SDK auto-selects the best broker
     const p = new Peer(id, {
       debug: 0,
       config: { iceServers: ICE_SERVERS }
@@ -893,7 +873,7 @@ async function joinRoom() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  UI
+//  UI & CONTROLS
 // ═══════════════════════════════════════════════════════════════
 function enterUI() {
   G('rTitle').textContent = 'Комната '+roomId;
@@ -908,7 +888,7 @@ function enterUI() {
   showScreen('roomScreen');
 }
 
-function doCleanup() {
+function leaveRoom() {
   if (amHost) {
     bcastHost({ type:'host_leaving' });
     for (const pid of Object.keys(parts)) hostRemove(pid);
@@ -927,10 +907,7 @@ function doCleanup() {
   for (const k of Object.keys(parts)) delete parts[k];
   for (const k of Object.keys(outCalls)) delete outCalls[k];
   myId=null; roomId=null; amHost=false; isMuted=false; isDeaf=false;
-}
-
-function leaveRoom() {
-  doCleanup();
+  
   G('muteBtn').textContent='🎙'; G('muteBtn').className='ctrl-btn';
   G('deafBtn').textContent='🔊'; G('deafBtn').className='ctrl-btn';
   G('logBox').innerHTML='';
@@ -941,6 +918,9 @@ function leaveRoom() {
 }
 
 function toggleMute() {
+  // FIX: Будим аудио-контекст при взаимодействии
+  if (amHost) initCtx(); 
+  
   isMuted = !isMuted;
   if (myStream) myStream.getAudioTracks().forEach(t=>t.enabled=!isMuted);
   const b = G('muteBtn');
@@ -954,6 +934,7 @@ function toggleMute() {
 }
 
 function toggleDeaf() {
+  if (amHost) initCtx();
   isDeaf = !isDeaf;
   if (clientAudio) clientAudio.volume = isDeaf ? 0 : vol;
   const b = G('deafBtn');
@@ -972,13 +953,11 @@ async function copyId() {
   catch(e) { toast(roomId, 'info'); }
 }
 
-// Keyboard shortcut
 document.addEventListener('keydown', e => {
   if (G('roomScreen').classList.contains('active') && e.code==='KeyM' && !e.target.matches('input'))
     toggleMute();
 });
 
-// URL param
 window.addEventListener('load', () => {
   const rid = new URLSearchParams(location.search).get('room');
   if (rid) { G('jRoom').value=rid.toUpperCase(); toast('ID вставлен — введи ник','info'); }
